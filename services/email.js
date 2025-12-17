@@ -8,9 +8,14 @@ const { URL } = require('url');
 
 let transporter = null;
 let useResend = false;
+let useBrevo = false;
 
-// Support for Resend (no phone verification), SendGrid, or SMTP
-if (process.env.RESEND_API_KEY) {
+// Support for Brevo (9,000 emails/month free), Resend, SendGrid, or SMTP
+if (process.env.BREVO_API_KEY) {
+  // Use Brevo API (300 emails/day = 9,000/month free, no phone verification)
+  useBrevo = true;
+  console.log('✅ Brevo API configured');
+} else if (process.env.RESEND_API_KEY) {
   // Use Resend API (no phone verification required, works with Render free tier)
   useResend = true;
   console.log('✅ Resend API configured');
@@ -62,7 +67,7 @@ if (process.env.RESEND_API_KEY) {
   }
 } else {
   console.warn('⚠️  Email not configured. Email notifications will not be sent.');
-  console.warn('   Please add RESEND_API_KEY (recommended, no phone verification), SENDGRID_API_KEY, or SMTP settings to enable email notifications.');
+  console.warn('   Please add BREVO_API_KEY (9,000/month free), RESEND_API_KEY, SENDGRID_API_KEY, or SMTP settings to enable email notifications.');
 }
 
 const fs = require('fs');
@@ -120,8 +125,8 @@ function downloadImage(url) {
 }
 
 async function sendAccidentAlertEmail({ vehicle, contact, lat, lng, imageUrls = [], helperNote, manualLocation }) {
-  if (!transporter && !useResend) {
-    const errorMsg = 'Email not configured. Please add RESEND_API_KEY, SENDGRID_API_KEY, or SMTP settings in .env file.';
+  if (!transporter && !useResend && !useBrevo) {
+    const errorMsg = 'Email not configured. Please add BREVO_API_KEY, RESEND_API_KEY, SENDGRID_API_KEY, or SMTP settings in .env file.';
     console.error('❌ Email not sent to', contact.email, '-', errorMsg);
     return { success: false, error: errorMsg };
   }
@@ -303,8 +308,84 @@ AssistQR - Vehicle Safety System
     console.log(`   - Photos: ${imageUrls.length} image(s) - ${imageCids.length} attached as inline`);
     console.log(`   - Helper Note: ${helperNote ? 'Yes' : 'No'}`);
     
-    // Send email via Resend API, SendGrid, or SMTP
-    if (useResend) {
+    // Send email via Brevo API, Resend API, SendGrid, or SMTP
+    if (useBrevo) {
+      // Use Brevo API (300 emails/day = 9,000/month free)
+      const fromEmail = process.env.BREVO_FROM || process.env.SMTP_FROM || 'noreply@assistqr.com';
+      
+      // Extract email from "Name <email>" format or use as-is
+      let senderEmail = fromEmail;
+      let senderName = 'AssistQR';
+      if (fromEmail.includes('<') && fromEmail.includes('>')) {
+        const match = fromEmail.match(/<(.+)>/);
+        if (match) {
+          senderEmail = match[1];
+          senderName = fromEmail.split('<')[0].trim() || 'AssistQR';
+        }
+      }
+      
+      const brevoPayload = {
+        sender: {
+          name: senderName,
+          email: senderEmail
+        },
+        to: [{ email: contact.email }],
+        subject: mailOptions.subject,
+        htmlContent: mailOptions.html,
+        textContent: mailOptions.text
+      };
+
+      // Add attachments if any
+      if (attachments.length > 0) {
+        brevoPayload.attachment = attachments.map(att => ({
+          name: att.filename,
+          content: att.content.toString('base64')
+        }));
+      }
+
+      const brevoData = JSON.stringify(brevoPayload);
+      const brevoOptions = {
+        hostname: 'api.brevo.com',
+        path: '/v3/smtp/email',
+        method: 'POST',
+        headers: {
+          'api-key': process.env.BREVO_API_KEY,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(brevoData)
+        }
+      };
+
+      return new Promise((resolve, reject) => {
+        const req = https.request(brevoOptions, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              const response = JSON.parse(data);
+              console.log(`✅ Email sent successfully to ${contact.email} via Brevo! Message ID: ${response.messageId}`);
+              resolve({ success: true, messageId: response.messageId });
+            } else {
+              let error;
+              try {
+                error = JSON.parse(data);
+              } catch (e) {
+                error = { message: data || `Brevo API error: ${res.statusCode}` };
+              }
+              console.error('❌ Brevo API error:', error);
+              reject(new Error(error.message || `Brevo API error: ${res.statusCode}`));
+            }
+          });
+        });
+
+        req.on('error', (error) => {
+          console.error('❌ Brevo request error:', error);
+          reject(error);
+        });
+
+        req.write(brevoData);
+        req.end();
+      });
+    } else if (useResend) {
       // Use Resend API
       // Use Resend's default domain (onboarding@resend.dev) which works without verification
       // If user has RESEND_FROM set, use it; otherwise use the default verified domain
