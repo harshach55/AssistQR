@@ -369,10 +369,8 @@ AssistQR - Vehicle Safety System
         hostname: 'api.mailgun.net',
         path: `/v3/${process.env.MAILGUN_DOMAIN}/messages`,
         method: 'POST',
-        headers: {
-          'Authorization': `Basic ${Buffer.from(`api:${process.env.MAILGUN_API_KEY}`).toString('base64')}`,
-          ...form.getHeaders()
-        }
+        auth: `api:${process.env.MAILGUN_API_KEY}`,
+        headers: form.getHeaders()
       };
       
       return new Promise((resolve, reject) => {
