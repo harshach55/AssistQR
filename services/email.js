@@ -10,8 +10,27 @@ let transporter = null;
 let useResend = false;
 let useBrevo = false;
 
-// Support for Brevo (9,000 emails/month free), Resend, SendGrid, or SMTP
-if (process.env.BREVO_API_KEY) {
+// Support for Brevo SMTP (works when API needs activation), Brevo API, Resend, SendGrid, or SMTP
+if (process.env.BREVO_SMTP_KEY) {
+  // Use Brevo SMTP (alternative when API account needs activation)
+  transporter = nodemailer.createTransport({
+    host: 'smtp-relay.brevo.com',
+    port: 587,
+    secure: false,
+    auth: {
+      user: process.env.BREVO_SMTP_USER || process.env.BREVO_SMTP_KEY.split('@')[0] + '@smtp-brevo.com',
+      pass: process.env.BREVO_SMTP_KEY
+    },
+    connectionTimeout: 60000,
+    greetingTimeout: 15000,
+    socketTimeout: 60000,
+    requireTLS: true,
+    tls: {
+      rejectUnauthorized: false
+    }
+  });
+  console.log('✅ Brevo SMTP configured');
+} else if (process.env.BREVO_API_KEY) {
   // Use Brevo API (300 emails/day = 9,000/month free, no phone verification)
   useBrevo = true;
   // Log first 10 chars for debugging (don't log full key for security)
@@ -69,7 +88,7 @@ if (process.env.BREVO_API_KEY) {
   }
 } else {
   console.warn('⚠️  Email not configured. Email notifications will not be sent.');
-  console.warn('   Please add BREVO_API_KEY (9,000/month free), RESEND_API_KEY, SENDGRID_API_KEY, or SMTP settings to enable email notifications.');
+  console.warn('   Please add BREVO_SMTP_KEY (recommended), BREVO_API_KEY, RESEND_API_KEY, SENDGRID_API_KEY, or SMTP settings to enable email notifications.');
 }
 
 const fs = require('fs');
