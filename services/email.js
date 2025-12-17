@@ -344,12 +344,23 @@ AssistQR - Vehicle Safety System
       }
 
       const brevoData = JSON.stringify(brevoPayload);
+      
+      // Verify API key exists
+      if (!process.env.BREVO_API_KEY) {
+        throw new Error('BREVO_API_KEY environment variable is not set');
+      }
+      
+      // Brevo API key should start with 'xkeysib-'
+      if (!process.env.BREVO_API_KEY.startsWith('xkeysib-')) {
+        console.warn('⚠️  Warning: Brevo API key should start with "xkeysib-". Make sure you copied the API key (not SMTP key) from Brevo dashboard.');
+      }
+      
       const brevoOptions = {
         hostname: 'api.brevo.com',
         path: '/v3/smtp/email',
         method: 'POST',
         headers: {
-          'api-key': process.env.BREVO_API_KEY,
+          'api-key': process.env.BREVO_API_KEY.trim(), // Trim whitespace
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(brevoData)
         }
