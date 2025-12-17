@@ -7,9 +7,14 @@ const http = require('http');
 const { URL } = require('url');
 
 let transporter = null;
+let useResend = false;
 
-// Support for SendGrid (preferred for cloud hosting) or SMTP
-if (process.env.SENDGRID_API_KEY) {
+// Support for Resend (no phone verification), SendGrid, or SMTP
+if (process.env.RESEND_API_KEY) {
+  // Use Resend API (no phone verification required, works with Render free tier)
+  useResend = true;
+  console.log('✅ Resend API configured');
+} else if (process.env.SENDGRID_API_KEY) {
   // Use SendGrid (works better with Render free tier)
   transporter = nodemailer.createTransport({
     service: 'SendGrid',
@@ -57,7 +62,7 @@ if (process.env.SENDGRID_API_KEY) {
   }
 } else {
   console.warn('⚠️  Email not configured. Email notifications will not be sent.');
-  console.warn('   Please add SENDGRID_API_KEY (recommended) or SMTP settings to enable email notifications.');
+  console.warn('   Please add RESEND_API_KEY (recommended, no phone verification), SENDGRID_API_KEY, or SMTP settings to enable email notifications.');
 }
 
 const fs = require('fs');
@@ -115,8 +120,8 @@ function downloadImage(url) {
 }
 
 async function sendAccidentAlertEmail({ vehicle, contact, lat, lng, imageUrls = [], helperNote, manualLocation }) {
-  if (!transporter) {
-    const errorMsg = 'SMTP not configured. Please configure SMTP settings in .env file (SMTP_HOST, SMTP_USER, SMTP_PASS).';
+  if (!transporter && !useResend) {
+    const errorMsg = 'Email not configured. Please add RESEND_API_KEY, SENDGRID_API_KEY, or SMTP settings in .env file.';
     console.error('❌ Email not sent to', contact.email, '-', errorMsg);
     return { success: false, error: errorMsg };
   }
@@ -298,10 +303,69 @@ AssistQR - Vehicle Safety System
     console.log(`   - Photos: ${imageUrls.length} image(s) - ${imageCids.length} attached as inline`);
     console.log(`   - Helper Note: ${helperNote ? 'Yes' : 'No'}`);
     
-    // Send email via optimized SMTP (Gmail, etc.)
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Email sent successfully to ${contact.email}! Message ID: ${info.messageId}`);
-    return { success: true, messageId: info.messageId };
+    // Send email via Resend API, SendGrid, or SMTP
+    if (useResend) {
+      // Use Resend API
+      const resendPayload = {
+        from: process.env.RESEND_FROM || process.env.SMTP_FROM || 'AssistQR <onboarding@resend.dev>',
+        to: [contact.email],
+        subject: mailOptions.subject,
+        html: mailOptions.html,
+        text: mailOptions.text
+      };
+
+      // Add attachments if any
+      if (attachments.length > 0) {
+        resendPayload.attachments = attachments.map(att => ({
+          filename: att.filename,
+          content: att.content.toString('base64'),
+          content_type: att.contentType
+        }));
+      }
+
+      const resendData = JSON.stringify(resendPayload);
+      const resendOptions = {
+        hostname: 'api.resend.com',
+        path: '/emails',
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(resendData)
+        }
+      };
+
+      return new Promise((resolve, reject) => {
+        const req = https.request(resendOptions, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              const response = JSON.parse(data);
+              console.log(`✅ Email sent successfully to ${contact.email} via Resend! Message ID: ${response.id}`);
+              resolve({ success: true, messageId: response.id });
+            } else {
+              const error = JSON.parse(data);
+              console.error('❌ Resend API error:', error);
+              reject(new Error(error.message || `Resend API error: ${res.statusCode}`));
+            }
+          });
+        });
+
+        req.on('error', (error) => {
+          console.error('❌ Resend request error:', error);
+          reject(error);
+        });
+
+        req.write(resendData);
+        req.end();
+      });
+    } else {
+      // Use SendGrid or SMTP via nodemailer
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`✅ Email sent successfully to ${contact.email}! Message ID: ${info.messageId}`);
+      return { success: true, messageId: info.messageId };
+    }
   } catch (error) {
     console.error('❌ Error sending email to', contact.email, ':');
     console.error('   Error message:', error.message);
