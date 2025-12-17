@@ -30,13 +30,19 @@ if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
     }
   });
 
-  transporter.verify(function(error, success) {
-    if (error) {
-      console.error('❌ SMTP connection error:', error.message);
-    } else {
-      console.log('✅ SMTP server is ready to send emails');
-    }
-  });
+  // Verify connection (disabled on startup to avoid timeout issues on Render)
+  // Connection will be verified when actually sending emails
+  if (process.env.NODE_ENV !== 'production') {
+    transporter.verify(function(error, success) {
+      if (error) {
+        console.error('❌ SMTP connection error:', error.message);
+      } else {
+        console.log('✅ SMTP server is ready to send emails');
+      }
+    });
+  } else {
+    console.log('✅ SMTP transporter configured (verification skipped in production)');
+  }
 } else {
   console.warn('⚠️  SMTP not configured. Email notifications will not be sent.');
   console.warn('   Please add SMTP settings to .env file to enable email notifications.');
