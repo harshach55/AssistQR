@@ -14,7 +14,9 @@ let useBrevo = false;
 if (process.env.BREVO_API_KEY) {
   // Use Brevo API (300 emails/day = 9,000/month free, no phone verification)
   useBrevo = true;
-  console.log('✅ Brevo API configured');
+  // Log first 10 chars for debugging (don't log full key for security)
+  const keyPreview = process.env.BREVO_API_KEY.substring(0, 10) + '...';
+  console.log(`✅ Brevo API configured (key: ${keyPreview})`);
 } else if (process.env.RESEND_API_KEY) {
   // Use Resend API (no phone verification required, works with Render free tier)
   useResend = true;
