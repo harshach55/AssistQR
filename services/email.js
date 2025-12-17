@@ -9,6 +9,7 @@ const { URL } = require('url');
 let transporter = null;
 let useResend = false;
 let useBrevo = false;
+let useMailgun = false;
 
 // Support for Brevo SMTP (works when API needs activation), Brevo API, Resend, SendGrid, or SMTP
 if (process.env.BREVO_SMTP_KEY) {
@@ -42,6 +43,10 @@ if (process.env.BREVO_SMTP_KEY) {
   // Log first 10 chars for debugging (don't log full key for security)
   const keyPreview = process.env.BREVO_API_KEY.substring(0, 10) + '...';
   console.log(`✅ Brevo API configured (key: ${keyPreview})`);
+} else if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN) {
+  // Use Mailgun API (5,000 emails/month free for 3 months, then 1,000/month)
+  useMailgun = true;
+  console.log('✅ Mailgun API configured');
 } else if (process.env.RESEND_API_KEY) {
   // Use Resend API (no phone verification required, works with Render free tier)
   useResend = true;
@@ -94,7 +99,7 @@ if (process.env.BREVO_SMTP_KEY) {
   }
 } else {
   console.warn('⚠️  Email not configured. Email notifications will not be sent.');
-  console.warn('   Please add BREVO_SMTP_KEY (recommended), BREVO_API_KEY, RESEND_API_KEY, SENDGRID_API_KEY, or SMTP settings to enable email notifications.');
+  console.warn('   Please add MAILGUN_API_KEY + MAILGUN_DOMAIN, BREVO_API_KEY (contact Brevo to activate), RESEND_API_KEY, SENDGRID_API_KEY, or SMTP settings to enable email notifications.');
 }
 
 const fs = require('fs');
@@ -335,8 +340,71 @@ AssistQR - Vehicle Safety System
     console.log(`   - Photos: ${imageUrls.length} image(s) - ${imageCids.length} attached as inline`);
     console.log(`   - Helper Note: ${helperNote ? 'Yes' : 'No'}`);
     
-    // Send email via Brevo API, Resend API, SendGrid, or SMTP
-    if (useBrevo) {
+    // Send email via Mailgun API, Brevo API, Resend API, SendGrid, or SMTP
+    if (useMailgun) {
+      // Use Mailgun API (5,000 emails/month free for 3 months, then 1,000/month)
+      const fromEmail = process.env.MAILGUN_FROM || process.env.SMTP_FROM || `AssistQR <noreply@${process.env.MAILGUN_DOMAIN}>`;
+      
+      // Mailgun uses form-data format
+      const FormData = require('form-data');
+      const form = new FormData();
+      
+      form.append('from', fromEmail);
+      form.append('to', contact.email);
+      form.append('subject', mailOptions.subject);
+      form.append('html', mailOptions.html);
+      form.append('text', mailOptions.text);
+      
+      // Add attachments if any
+      if (attachments.length > 0) {
+        attachments.forEach(att => {
+          form.append('attachment', att.content, {
+            filename: att.filename,
+            contentType: att.contentType
+          });
+        });
+      }
+      
+      const mailgunOptions = {
+        hostname: 'api.mailgun.net',
+        path: `/v3/${process.env.MAILGUN_DOMAIN}/messages`,
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(`api:${process.env.MAILGUN_API_KEY}`).toString('base64')}`,
+          ...form.getHeaders()
+        }
+      };
+      
+      return new Promise((resolve, reject) => {
+        const req = https.request(mailgunOptions, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              const response = JSON.parse(data);
+              console.log(`✅ Email sent successfully to ${contact.email} via Mailgun! Message ID: ${response.id}`);
+              resolve({ success: true, messageId: response.id });
+            } else {
+              let error;
+              try {
+                error = JSON.parse(data);
+              } catch (e) {
+                error = { message: data || `Mailgun API error: ${res.statusCode}` };
+              }
+              console.error('❌ Mailgun API error:', error);
+              reject(new Error(error.message || `Mailgun API error: ${res.statusCode}`));
+            }
+          });
+        });
+        
+        req.on('error', (error) => {
+          console.error('❌ Mailgun request error:', error);
+          reject(error);
+        });
+        
+        form.pipe(req);
+      });
+    } else if (useBrevo) {
       // Use Brevo API (300 emails/day = 9,000/month free)
       const fromEmail = process.env.BREVO_FROM || process.env.SMTP_FROM || 'noreply@assistqr.com';
       
