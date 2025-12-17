@@ -20,11 +20,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Session: Store user login state (using PostgreSQL store for production)
-const sessionStore = process.env.DATABASE_URL ? new pgSession({
-  conString: process.env.DATABASE_URL,
-  tableName: 'user_sessions',
-  createTableIfMissing: true
-}) : undefined;
+let sessionStore;
+try {
+  if (process.env.DATABASE_URL) {
+    sessionStore = new pgSession({
+      conString: process.env.DATABASE_URL,
+      tableName: 'user_sessions',
+      createTableIfMissing: true
+    });
+    console.log('✅ PostgreSQL session store initialized');
+  } else {
+    console.warn('⚠️  DATABASE_URL not found, using MemoryStore (not recommended for production)');
+  }
+} catch (error) {
+  console.error('❌ Error initializing session store:', error);
+  sessionStore = undefined;
+}
 
 app.use(session({
   store: sessionStore,
