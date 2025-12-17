@@ -13,12 +13,18 @@ let useBrevo = false;
 // Support for Brevo SMTP (works when API needs activation), Brevo API, Resend, SendGrid, or SMTP
 if (process.env.BREVO_SMTP_KEY) {
   // Use Brevo SMTP (alternative when API account needs activation)
+  // SMTP login format: [userid]@smtp-brevo.com (e.g., 9e48fe001@smtp-brevo.com)
+  // If BREVO_SMTP_USER not provided, user needs to get it from Brevo dashboard
+  const smtpUser = process.env.BREVO_SMTP_USER;
+  if (!smtpUser) {
+    console.warn('⚠️  BREVO_SMTP_USER not set. Get your SMTP login from Brevo dashboard (Settings → SMTP & API → Your SMTP Settings → Login)');
+  }
   transporter = nodemailer.createTransport({
     host: 'smtp-relay.brevo.com',
     port: 587,
     secure: false,
     auth: {
-      user: process.env.BREVO_SMTP_USER || process.env.BREVO_SMTP_KEY.split('@')[0] + '@smtp-brevo.com',
+      user: smtpUser,
       pass: process.env.BREVO_SMTP_KEY
     },
     connectionTimeout: 60000,
