@@ -17,9 +17,9 @@ if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
     },
-    connectionTimeout: 30000,
-    greetingTimeout: 10000,
-    socketTimeout: 30000,
+    connectionTimeout: 60000,
+    greetingTimeout: 15000,
+    socketTimeout: 60000,
     pool: true,
     maxConnections: 5,
     maxMessages: 100,
