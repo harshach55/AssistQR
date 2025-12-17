@@ -10,6 +10,9 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy (required for Render and other hosting platforms)
+app.set('trust proxy', 1);
+
 // Middleware: Parse request bodies and serve static files
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
