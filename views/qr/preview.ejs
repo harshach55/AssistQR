@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code - <%= vehicle.licensePlate %></title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/vehicles" class="nav-brand">🚨 AssistQR</a>
+            <div class="nav-links">
+                <a href="/vehicles/<%= vehicle.id %>" class="nav-link">← Back to Vehicle</a>
+                <span class="nav-user">Hello, <%= user.name %></span>
+                <a href="/auth/logout" class="btn btn-outline btn-sm">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-sm">
+        <div class="card">
+            <div class="card-header">
+                <h1 class="card-title">QR Code for <%= vehicle.licensePlate %></h1>
+                <p>Print or save this QR code and place it on your vehicle</p>
+            </div>
+
+            <div class="qr-container">
+                <img src="<%= qrCodeDataUrl %>" alt="QR Code" class="qr-image">
+                <p style="margin: 1rem 0; color: var(--text-secondary);">
+                    Anyone scanning this QR code will be able to report an accident involving this vehicle.
+                </p>
+                <div class="d-flex gap-2" style="justify-content: center; flex-wrap: wrap;">
+                    <a href="<%= downloadUrl %>" class="btn btn-primary" download>Download QR Code</a>
+                    <button onclick="window.print()" class="btn btn-outline">Print QR Code</button>
+                </div>
+            </div>
+
+            <div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
+                <h3 style="margin-bottom: 1rem;">Instructions:</h3>
+                <ol style="line-height: 2; color: var(--text-secondary);">
+                    <li>Download or print this QR code</li>
+                    <li>Laminate it for weather protection</li>
+                    <li>Place it in a visible location on your vehicle (dashboard, rear window, or side panel)</li>
+                    <li>When scanned, it will allow bystanders to report accidents and notify your emergency contacts</li>
+                </ol>
+            </div>
+
+            <div style="margin-top: 2rem; padding: 1rem; background-color: #fff3cd; border-radius: 6px; border: 1px solid #ffc107;">
+                <p style="margin: 0; color: #856404;">
+                    <strong>Privacy Note:</strong> The QR code only contains a secure token. 
+                    It does not reveal any personal information, phone numbers, or email addresses.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        @media print {
+            @page {
+                size: A4;
+                margin: 1cm;
+            }
+            
+            body {
+                margin: 0;
+                padding: 0;
+            }
+            
+            .navbar, .btn, nav, .d-flex { 
+                display: none !important; 
+            }
+            
+            .card { 
+                box-shadow: none; 
+                border: none;
+                padding: 0;
+                margin: 0;
+                page-break-inside: avoid;
+            }
+            
+            .card-header {
+                padding: 0.5rem 0;
+                margin-bottom: 0.5rem;
+            }
+            
+            .card-header h1 {
+                font-size: 1.5rem;
+                margin-bottom: 0.25rem;
+            }
+            
+            .card-header p {
+                font-size: 0.9rem;
+                margin: 0;
+            }
+            
+            .qr-container {
+                text-align: center;
+                padding: 0.5rem 0;
+            }
+            
+            .qr-image { 
+                max-width: 60%;
+                max-height: 400px;
+                margin: 0 auto;
+            }
+            
+            .qr-container p {
+                font-size: 0.85rem;
+                margin: 0.5rem 0;
+            }
+            
+            /* Instructions section - compact for print */
+            div[style*="margin-top: 2rem"] {
+                margin-top: 0.75rem !important;
+                padding-top: 0.75rem !important;
+                page-break-inside: avoid;
+            }
+            
+            h3 {
+                font-size: 1rem;
+                margin-bottom: 0.5rem !important;
+            }
+            
+            ol {
+                font-size: 0.8rem;
+                line-height: 1.4 !important;
+                margin: 0.5rem 0;
+                padding-left: 1.5rem;
+            }
+            
+            /* Privacy note - make it smaller and compact */
+            div[style*="background-color: #fff3cd"] {
+                margin-top: 0.5rem !important;
+                padding: 0.5rem !important;
+                font-size: 0.75rem !important;
+                page-break-inside: avoid;
+            }
+            
+            /* Ensure everything fits on one page */
+            .container-sm {
+                max-width: 100%;
+                padding: 0;
+            }
+        }
+    </style>
+</body>
+</html>
+

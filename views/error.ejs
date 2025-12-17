@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error - AssistQR</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .error-container {
+            text-align: center;
+            padding: 4rem 1rem;
+        }
+        .error-icon {
+            font-size: 5rem;
+            margin-bottom: 1rem;
+        }
+        .error-title {
+            font-size: 2rem;
+            color: var(--danger-color);
+            margin-bottom: 1rem;
+        }
+        .error-message {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-sm">
+        <div class="error-container">
+            <div class="error-icon">⚠️</div>
+            <h1 class="error-title">Error</h1>
+            <p class="error-message"><%= message %></p>
+            <% if (error && typeof error === 'object') { %>
+                <% if (process.env.NODE_ENV === 'development') { %>
+                    <div class="card" style="text-align: left; margin-top: 2rem;">
+                        <pre style="overflow-x: auto; font-size: 0.875rem;"><%= JSON.stringify(error, null, 2) %></pre>
+                    </div>
+                <% } %>
+            <% } %>
+            <div style="margin-top: 2rem;">
+                <a href="/" class="btn btn-primary">Go to Home</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+

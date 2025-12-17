@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= vehicle.licensePlate %> - Vehicle Details</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/vehicles" class="nav-brand">🚨 AssistQR</a>
+            <div class="nav-links">
+                <a href="/vehicles" class="nav-link">← Back to Vehicles</a>
+                <span class="nav-user">Hello, <%= user.name %></span>
+                <a href="/auth/logout" class="btn btn-outline btn-sm">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-between" style="align-items: center;">
+                    <div>
+                        <h1 class="card-title"><%= vehicle.licensePlate %></h1>
+                        <p style="color: var(--text-secondary);">
+                            <%= vehicle.model || 'No model specified' %> • 
+                            <%= vehicle.color || 'No color specified' %>
+                        </p>
+                    </div>
+                    <a href="/qr/<%= vehicle.id %>/preview" class="btn btn-primary">View QR Code</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Emergency Contacts Section -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Emergency Contacts</h2>
+            </div>
+            
+            <div id="contacts-list">
+                <% if (vehicle.emergencyContacts.length === 0) { %>
+                    <p style="color: var(--text-secondary); margin-bottom: 1rem;">No emergency contacts added yet.</p>
+                <% } else { %>
+                    <ul class="list-group">
+                        <% vehicle.emergencyContacts.forEach(contact => { %>
+                            <li class="list-item">
+                                <div>
+                                    <div class="list-item-title"><%= contact.name %></div>
+                                    <div class="list-item-subtitle">
+                                        📧 <%= contact.email %> • 
+                                        📱 <%= contact.phoneNumber %>
+                                    </div>
+                                </div>
+                                <button 
+                                    onclick="deleteContact(<%= contact.id %>)" 
+                                    class="btn btn-sm btn-danger"
+                                >
+                                    Delete
+                                </button>
+                            </li>
+                        <% }); %>
+                    </ul>
+                <% } %>
+            </div>
+
+            <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);">
+                <h3 style="margin-bottom: 1rem;">Add Emergency Contact</h3>
+                <form id="add-contact-form">
+                    <input type="hidden" name="vehicleId" value="<%= vehicle.id %>">
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="contact-name">Name *</label>
+                        <input 
+                            type="text" 
+                            id="contact-name" 
+                            name="name" 
+                            class="form-input" 
+                            required 
+                            placeholder="John Doe"
+                            maxlength="100"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="contact-email">Email *</label>
+                        <input 
+                            type="email" 
+                            id="contact-email" 
+                            name="email" 
+                            class="form-input" 
+                            required 
+                            placeholder="contact@example.com"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="contact-phone">Phone Number *</label>
+                        <input 
+                            type="tel" 
+                            id="contact-phone" 
+                            name="phoneNumber" 
+                            class="form-input" 
+                            required 
+                            placeholder="+919876543210"
+                            pattern="^\+[1-9]\d{1,14}$"
+                        >
+                        <div class="form-help">Format: +[country code][number] (e.g., +919876543210)</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Add Contact</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Recent Accident Reports -->
+        <% if (vehicle.accidentReports.length > 0) { %>
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">All Accident Reports (<%= vehicle.accidentReports.length %>)</h2>
+                </div>
+                <% vehicle.accidentReports.forEach((report, index) => { %>
+                    <div class="card" style="margin-bottom: 1.5rem; border-left: 4px solid var(--danger-color);">
+                        <div style="margin-bottom: 1rem;">
+                            <h3 style="color: var(--danger-color); margin-bottom: 0.5rem;">
+                                Report #<%= vehicle.accidentReports.length - index %>
+                            </h3>
+                            <div style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 0.5rem;">
+                                <strong>Time:</strong> <%= new Date(report.createdAt).toLocaleString() %>
+                            </div>
+                            <% if (report.lat && report.lng) { %>
+                                <div style="margin-bottom: 0.5rem;">
+                                    <a href="https://www.google.com/maps?q=<%= report.lat %>,<%= report.lng %>" target="_blank" class="btn btn-sm btn-primary">
+                                        📍 View Location on Map
+                                    </a>
+                                </div>
+                            <% } %>
+                            <% if (report.manualLocation) { %>
+                                <div style="margin-bottom: 0.5rem;">
+                                    <strong>Location:</strong> <%= report.manualLocation %>
+                                </div>
+                            <% } %>
+                            <% if (report.helperNote) { %>
+                                <div style="margin-bottom: 0.5rem; padding: 0.75rem; background-color: var(--bg-light); border-radius: 6px;">
+                                    <strong>Helper Note:</strong> <%= report.helperNote %>
+                                </div>
+                            <% } %>
+                        </div>
+
+                        <% if (report.images && report.images.length > 0) { %>
+                            <div>
+                                <h4 style="margin-bottom: 1rem;">Accident Photos (<%= report.images.length %>)</h4>
+                                <div class="image-preview-container" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem;">
+                                    <% report.images.forEach((image, index) => { %>
+                                        <div class="image-preview" style="position: relative;">
+                                            <a href="<%= image.imageUrl %>" target="_blank" style="display: block;">
+                                                <img 
+                                                    src="<%= image.imageUrl %>" 
+                                                    alt="Accident photo <%= index + 1 %>"
+                                                    style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; border: 2px solid var(--border-color); cursor: pointer;"
+                                                    onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'200\'%3E%3Crect fill=\'%23ddd\' width=\'200\' height=\'200\'/%3E%3Ctext fill=\'%23999\' font-family=\'sans-serif\' font-size=\'14\' x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dominant-baseline=\'middle\'%3EImage not found%3C/text%3E%3C/svg%3E';"
+                                                >
+                                            </a>
+                                        </div>
+                                    <% }); %>
+                                </div>
+                            </div>
+                        <% } else { %>
+                            <div style="padding: 1rem; background-color: #fff3cd; border-radius: 6px; color: #856404;">
+                                <strong>Note:</strong> No photos were uploaded with this report.
+                            </div>
+                        <% } %>
+                    </div>
+                <% }); %>
+            </div>
+        <% } %>
+
+        <!-- Delete Vehicle -->
+        <div class="card">
+            <div style="text-align: center;">
+                <form method="POST" action="/vehicles/<%= vehicle.id %>/delete" onsubmit="return confirm('Are you sure you want to delete this vehicle? This action cannot be undone.');">
+                    <button type="submit" class="btn btn-danger">Delete Vehicle</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Add contact form submission
+        document.getElementById('add-contact-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            
+            try {
+                const response = await fetch('/contacts/add', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + (result.error || 'Failed to add contact'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        });
+
+        // Delete contact
+        async function deleteContact(contactId) {
+            if (!confirm('Are you sure you want to delete this emergency contact?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/contacts/${contactId}/delete`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + (result.error || 'Failed to delete contact'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - AssistQR</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container-sm" style="margin-top: 4rem;">
+        <div class="card">
+            <div class="card-header">
+                <h1 class="card-title">Create Account</h1>
+                <p>Sign up to get started</p>
+            </div>
+
+            <% if (error) { %>
+                <div class="alert alert-error"><%= error %></div>
+            <% } %>
+
+            <form method="POST" action="/auth/signup">
+                <div class="form-group">
+                    <label class="form-label" for="name">Full Name</label>
+                    <input 
+                        type="text" 
+                        id="name" 
+                        name="name" 
+                        class="form-input" 
+                        required 
+                        autocomplete="name"
+                        placeholder="John Doe"
+                        minlength="2"
+                        maxlength="100"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="email">Email</label>
+                    <input 
+                        type="email" 
+                        id="email" 
+                        name="email" 
+                        class="form-input" 
+                        required 
+                        autocomplete="email"
+                        placeholder="your.email@example.com"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="password">Password</label>
+                    <input 
+                        type="password" 
+                        id="password" 
+                        name="password" 
+                        class="form-input" 
+                        required 
+                        autocomplete="new-password"
+                        placeholder="Minimum 6 characters"
+                        minlength="6"
+                    >
+                    <div class="form-help">Password must be at least 6 characters long</div>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+            </form>
+
+            <div class="text-center mt-2">
+                <p>Already have an account? <a href="/auth/login" class="nav-link">Login</a></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+

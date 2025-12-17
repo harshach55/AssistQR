@@ -1,0 +1,37 @@
+{
+  "files.associations": {
+    "*.ejs": "html"
+  },
+  "javascript.validate.enable": false,
+  "typescript.validate.enable": false,
+  "javascript.suggestionActions.enabled": false,
+  "typescript.suggestionActions.enabled": false,
+  "[html]": {
+    "editor.defaultFormatter": null
+  },
+  "html.validate.scripts": false,
+  "html.validate.styles": false,
+  "html.suggest.html5": true,
+  "files.watcherExclude": {
+    "**/node_modules/**": true
+  },
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/uploads": true,
+    "**/.vscode": true,
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/package-lock.json": true,
+    "**/prisma/migrations": true,
+    "**/.env": true,
+    "**/.gitignore": false
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/uploads": true,
+    "**/.vscode": true,
+    "**/package-lock.json": true,
+    "**/prisma/migrations": true
+  }
+}
+

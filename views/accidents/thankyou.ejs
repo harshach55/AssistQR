@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thank You - AssistQR</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .thankyou-container {
+            text-align: center;
+            padding: 4rem 1rem;
+        }
+        .thankyou-icon {
+            font-size: 5rem;
+            margin-bottom: 1rem;
+        }
+        .thankyou-title {
+            font-size: 2rem;
+            color: var(--success-color);
+            margin-bottom: 1rem;
+        }
+        .thankyou-message {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-sm">
+        <div class="thankyou-container">
+            <div class="thankyou-icon">✅</div>
+            <h1 class="thankyou-title">Thank You!</h1>
+            <p class="thankyou-message">
+                Your emergency report has been submitted successfully. 
+                Emergency contacts for vehicle <strong><%= vehicleLicensePlate %></strong> 
+                have been notified via email and SMS.
+            </p>
+            <p class="thankyou-message">
+                <strong><%= notificationCount %></strong> emergency contact(s) have been alerted.
+            </p>
+            <div class="card" style="margin-top: 2rem; background-color: #d4edda; border: 1px solid var(--success-color);">
+                <p style="margin: 0; color: #155724;">
+                    <strong>Your help matters!</strong> The vehicle owner and their emergency contacts have been immediately notified with all the information you provided.
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+

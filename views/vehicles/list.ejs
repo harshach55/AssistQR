@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Vehicles - AssistQR</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/vehicles" class="nav-brand">🚨 AssistQR</a>
+            <div class="nav-links">
+                <span class="nav-user">Hello, <%= user.name %></span>
+                <a href="/auth/logout" class="btn btn-outline btn-sm">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="d-flex justify-between" style="align-items: center; margin-bottom: 2rem;">
+            <h1>My Vehicles</h1>
+            <a href="/vehicles/add" class="btn btn-primary">+ Add Vehicle</a>
+        </div>
+
+        <% if (vehicles.length === 0) { %>
+            <div class="card">
+                <div class="text-center">
+                    <p style="font-size: 1.2rem; margin-bottom: 1rem;">You haven't added any vehicles yet.</p>
+                    <a href="/vehicles/add" class="btn btn-primary">Add Your First Vehicle</a>
+                </div>
+            </div>
+        <% } else { %>
+            <div class="card">
+                <ul class="list-group">
+                    <% vehicles.forEach(vehicle => { %>
+                        <li class="list-item">
+                            <div>
+                                <div class="list-item-title">
+                                    <%= vehicle.licensePlate %>
+                                    <% if (vehicle.model) { %>
+                                        - <%= vehicle.model %>
+                                    <% } %>
+                                </div>
+                                <div class="list-item-subtitle">
+                                    <%= vehicle.color || 'No color specified' %> • 
+                                    <%= vehicle.emergencyContacts.length %> emergency contact(s) • 
+                                    <%= vehicle._count.accidentReports %> report(s)
+                                </div>
+                            </div>
+                            <div class="d-flex gap-1">
+                                <a href="/vehicles/<%= vehicle.id %>" class="btn btn-sm btn-primary">View</a>
+                                <a href="/qr/<%= vehicle.id %>/preview" class="btn btn-sm btn-outline">QR Code</a>
+                            </div>
+                        </li>
+                    <% }); %>
+                </ul>
+            </div>
+        <% } %>
+    </div>
+</body>
+</html>
+

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Vehicle - AssistQR</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/vehicles" class="nav-brand">🚨 AssistQR</a>
+            <div class="nav-links">
+                <a href="/vehicles" class="nav-link">← Back to Vehicles</a>
+                <span class="nav-user">Hello, <%= typeof user !== 'undefined' ? user.name : 'User' %></span>
+                <a href="/auth/logout" class="btn btn-outline btn-sm">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-sm">
+        <div class="card">
+            <div class="card-header">
+                <h1 class="card-title">Add New Vehicle</h1>
+                <p>Add a vehicle to generate its QR code</p>
+            </div>
+
+            <% if (error) { %>
+                <div class="alert alert-error"><%= error %></div>
+            <% } %>
+
+            <form method="POST" action="/vehicles/add">
+                <div class="form-group">
+                    <label class="form-label" for="licensePlate">License Plate *</label>
+                    <input 
+                        type="text" 
+                        id="licensePlate" 
+                        name="licensePlate" 
+                        class="form-input" 
+                        required 
+                        placeholder="ABC-1234"
+                        maxlength="50"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="model">Model (Optional)</label>
+                    <input 
+                        type="text" 
+                        id="model" 
+                        name="model" 
+                        class="form-input" 
+                        placeholder="Toyota Camry"
+                        maxlength="100"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="color">Color (Optional)</label>
+                    <input 
+                        type="text" 
+                        id="color" 
+                        name="color" 
+                        class="form-input" 
+                        placeholder="Blue"
+                        maxlength="50"
+                    >
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Add Vehicle</button>
+                    <a href="/vehicles" class="btn btn-outline">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
+

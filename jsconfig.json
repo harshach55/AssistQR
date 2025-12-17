@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "checkJs": false
+  },
+  "exclude": [
+    "node_modules",
+    "views/**/*.ejs"
+  ],
+  "files.associations": {
+    "*.ejs": "html"
+  }
+}
+
