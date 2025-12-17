@@ -306,8 +306,16 @@ AssistQR - Vehicle Safety System
     // Send email via Resend API, SendGrid, or SMTP
     if (useResend) {
       // Use Resend API
+      // Use Resend's default domain (onboarding@resend.dev) which works without verification
+      // If user has RESEND_FROM set, use it; otherwise use the default verified domain
+      let fromEmail = process.env.RESEND_FROM;
+      if (!fromEmail || fromEmail.includes('yourdomain.com')) {
+        // Use Resend's default verified domain
+        fromEmail = 'AssistQR <onboarding@resend.dev>';
+      }
+      
       const resendPayload = {
-        from: process.env.RESEND_FROM || process.env.SMTP_FROM || 'AssistQR <onboarding@resend.dev>',
+        from: fromEmail,
         to: [contact.email],
         subject: mailOptions.subject,
         html: mailOptions.html,
