@@ -8,7 +8,19 @@ const { URL } = require('url');
 
 let transporter = null;
 
-if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+// Support for SendGrid (preferred for cloud hosting) or SMTP
+if (process.env.SENDGRID_API_KEY) {
+  // Use SendGrid (works better with Render free tier)
+  transporter = nodemailer.createTransport({
+    service: 'SendGrid',
+    auth: {
+      user: 'apikey',
+      pass: process.env.SENDGRID_API_KEY
+    }
+  });
+  console.log('✅ SendGrid transporter configured');
+} else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+  // Use SMTP (Gmail, etc.)
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '587'),
@@ -44,8 +56,8 @@ if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
     console.log('✅ SMTP transporter configured (verification skipped in production)');
   }
 } else {
-  console.warn('⚠️  SMTP not configured. Email notifications will not be sent.');
-  console.warn('   Please add SMTP settings to .env file to enable email notifications.');
+  console.warn('⚠️  Email not configured. Email notifications will not be sent.');
+  console.warn('   Please add SENDGRID_API_KEY (recommended) or SMTP settings to enable email notifications.');
 }
 
 const fs = require('fs');
