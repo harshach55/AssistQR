@@ -21,7 +21,7 @@ router.post('/add', [
     }
     return true;
   }),
-  body('email').isEmail().normalizeEmail()
+  body('email').isEmail()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
