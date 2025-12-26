@@ -566,7 +566,7 @@
                     // Update pending count
                     if (window.offlineSync) {
                         await window.offlineSync.updatePendingCount();
-                        await window.offlineSync.initSync();
+                        // Don't call initSync here - it will be called by offline-sync.js to prevent duplicates
                     }
                 } catch (error) {
                     console.error('❌ Failed to initialize offline storage:', error);
@@ -594,11 +594,11 @@
                         .then((registration) => {
                             console.log('✅ Service Worker registered:', registration.scope);
                             
-                            // Listen for service worker messages
+                            // Listen for service worker messages (but don't sync immediately - let offline-sync.js handle it)
                             navigator.serviceWorker.addEventListener('message', (event) => {
                                 if (event.data && event.data.type === 'SYNC_REPORTS') {
-                                    console.log('🔄 Service Worker requested sync');
-                                    window.offlineSync.syncAllPendingReports();
+                                    console.log('🔄 Service Worker requested sync (handled by offline-sync.js)');
+                                    // Sync is already handled by offline-sync.js's onOnlineStatusChange
                                 }
                             });
                             
@@ -642,12 +642,10 @@
             }
         }
 
-        // Listen for online/offline events
+        // Listen for online/offline events (only for UI updates, sync is handled by offline-sync.js)
         window.offlineStorage.onOnlineStatusChange((isOnline) => {
             updateOfflineStatus();
-            if (isOnline) {
-                window.offlineSync.syncAllPendingReports();
-            }
+            // Don't call sync here - it's already handled by offline-sync.js to prevent duplicates
         });
 
         // Initial status check
@@ -786,9 +784,15 @@
                         const longitude = formData.get('longitude');
                         const manualLocation = formData.get('manualLocation');
                         const helperNote = formData.get('helperNote');
-                        const imageFiles = formData.getAll('images');
+                        // Get image files - filter out empty files
+                        const imageFiles = Array.from(formData.getAll('images')).filter(file => 
+                            file && file instanceof File && file.size > 0
+                        );
                         
                         console.log('📝 Report data:', { qrToken, latitude, longitude, manualLocation, helperNote, imageCount: imageFiles.length });
+                        imageFiles.forEach((file, index) => {
+                            console.log(`  Image ${index + 1}: ${file.name}, ${file.size} bytes, type: ${file.type}`);
+                        });
                         
                         // Queue report
                         const reportId = await window.offlineStorage.queueReport({

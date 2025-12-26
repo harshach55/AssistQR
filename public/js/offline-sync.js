@@ -41,9 +41,9 @@ async function syncReport(report) {
     });
 
     if (response.ok) {
-      // Success - remove from queue
+      // Success - remove from queue IMMEDIATELY to prevent duplicate syncs
       await window.offlineStorage.removeReport(report.id);
-      console.log('✅ Report synced successfully:', report.id);
+      console.log('✅ Report synced successfully and removed from queue:', report.id);
       return { success: true, reportId: report.id };
     } else {
       // Failed - update status
@@ -88,17 +88,21 @@ async function syncAllPendingReports() {
     let failed = 0;
 
     // Sync reports one by one to avoid overwhelming the server
-    for (const report of pendingReports) {
+    // Get fresh list before each sync to avoid duplicates
+    let currentPending = await window.offlineStorage.getPendingReports();
+    
+    for (const report of currentPending) {
       // Double-check report is still pending (might have been synced by another process)
-      const currentReport = await window.offlineStorage.getPendingReports();
-      const stillPending = currentReport.find(r => r.id === report.id);
-      
-      if (!stillPending || stillPending.status !== 'pending') {
-        console.log(`⏭️  Report ${report.id} already synced, skipping...`);
+      if (report.status !== 'pending') {
+        console.log(`⏭️  Report ${report.id} status is ${report.status}, skipping...`);
         continue;
       }
 
+      console.log(`🔄 Syncing report ${report.id}...`);
       const result = await syncReport(report);
+      
+      // Refresh pending list after each sync
+      currentPending = await window.offlineStorage.getPendingReports();
       if (result.success) {
         synced++;
       } else {
@@ -181,20 +185,42 @@ function registerBackgroundSync() {
 
 // Listen for online events and sync (with debounce to prevent multiple calls)
 let onlineSyncTimeout = null;
-window.offlineStorage.onOnlineStatusChange(async (isOnline) => {
-  if (isOnline) {
-    console.log('🌐 Online - scheduling sync...');
-    // Register background sync
-    registerBackgroundSync();
-    // Debounce sync to prevent multiple rapid calls
-    if (onlineSyncTimeout) {
-      clearTimeout(onlineSyncTimeout);
+let syncListenerRegistered = false;
+
+// Register sync listener only once
+if (!syncListenerRegistered && window.offlineStorage) {
+  syncListenerRegistered = true;
+  window.offlineStorage.onOnlineStatusChange(async (isOnline) => {
+    if (isOnline) {
+      console.log('🌐 Online - scheduling sync...');
+      // Register background sync
+      registerBackgroundSync();
+      // Debounce sync to prevent multiple rapid calls
+      if (onlineSyncTimeout) {
+        clearTimeout(onlineSyncTimeout);
+      }
+      onlineSyncTimeout = setTimeout(async () => {
+        await syncAllPendingReports();
+      }, 2000); // Wait 2 seconds after coming online
     }
-    onlineSyncTimeout = setTimeout(async () => {
-      await syncAllPendingReports();
-    }, 2000); // Wait 2 seconds after coming online
-  }
-});
+  });
+}
+
+// Also listen for Service Worker messages
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SYNC_REPORTS') {
+      console.log('🔄 Service Worker requested sync');
+      // Debounce to prevent duplicates
+      if (onlineSyncTimeout) {
+        clearTimeout(onlineSyncTimeout);
+      }
+      onlineSyncTimeout = setTimeout(async () => {
+        await syncAllPendingReports();
+      }, 1000);
+    }
+  });
+}
 
 // Export functions
 window.offlineSync = {
