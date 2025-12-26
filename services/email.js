@@ -454,6 +454,16 @@ async function sendAccidentAlertEmail({ vehicle, contact, lat, lng, imageUrls = 
     return { success: false, error: errorMsg };
   }
 
+  // Log image URLs being passed to email service
+  console.log(`📧 Preparing email for ${contact.email} with ${imageUrls.length} image(s):`);
+  if (imageUrls.length > 0) {
+    imageUrls.forEach((url, index) => {
+      console.log(`  📷 Image ${index + 1}: ${url}`);
+    });
+  } else {
+    console.warn('  ⚠️  No image URLs provided to email service');
+  }
+
   try {
     const mapsLink = (lat && lng) ? `https://www.google.com/maps?q=${lat},${lng}` : '';
     const locationText = [

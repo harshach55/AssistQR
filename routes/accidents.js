@@ -90,14 +90,37 @@ router.post('/report', (req, res, next) => {
     if (req.files && req.files.length > 0) {
       req.files.forEach((file, index) => {
         console.log(`  File ${index + 1}: ${file.originalname || file.filename || file.key} (${file.size || 'unknown size'} bytes, type: ${file.mimetype || file.contentType || 'unknown'})`);
+        console.log(`    - Location: ${file.location || 'N/A'}`);
+        console.log(`    - Key: ${file.key || 'N/A'}`);
+        console.log(`    - Filename: ${file.filename || 'N/A'}`);
       });
     } else {
       console.warn('⚠️ No files received in request');
     }
 
-    const imageUrls = (req.files || []).map(file => 
-      file.location || getFileUrl(file.filename || file.key)
-    ).filter(Boolean);
+    const imageUrls = (req.files || []).map(file => {
+      const url = file.location || getFileUrl(file.filename || file.key);
+      console.log(`  🔗 Mapping file to URL: ${file.filename || file.key} -> ${url || 'NULL'}`);
+      return url;
+    }).filter(Boolean);
+
+    // Log image URLs for debugging
+    console.log(`📸 Generated ${imageUrls.length} image URL(s):`);
+    if (imageUrls.length > 0) {
+      imageUrls.forEach((url, index) => {
+        console.log(`  Image ${index + 1} URL: ${url}`);
+      });
+    } else if (req.files && req.files.length > 0) {
+      console.error('❌ ERROR: Files were uploaded but no URLs were generated!');
+      console.error('   This might indicate S3 is not configured and local storage is not accessible.');
+      console.error(`   BASE_URL: ${process.env.BASE_URL || 'NOT SET'}`);
+      console.error(`   S3_CONFIGURED: ${process.env.S3_ACCESS_KEY_ID ? 'YES' : 'NO'}`);
+    }
+    
+    // Warn if no images and this might be a sync issue
+    if (imageUrls.length === 0 && req.files && req.files.length === 0) {
+      console.warn('⚠️  No images in request - this might be an offline sync issue');
+    }
 
     const accidentReport = await prisma.accidentReport.create({
       data: {
