@@ -163,28 +163,45 @@ async function syncAllPendingReports() {
     let failed = 0;
 
     // Sync reports one by one to avoid overwhelming the server
-    // Get fresh list before each sync to avoid duplicates
-    let currentPending = await window.offlineStorage.getPendingReports();
+    // Mark as syncing BEFORE getting the list to prevent race conditions
+    const pendingReports = await window.offlineStorage.getPendingReports();
     
-    for (const report of currentPending) {
+    if (pendingReports.length === 0) {
+      console.log('✅ No pending reports to sync');
+      return { synced: 0, failed: 0 };
+    }
+
+    console.log(`🔄 Found ${pendingReports.length} pending report(s) to sync`);
+
+    let synced = 0;
+    let failed = 0;
+
+    for (const report of pendingReports) {
       // Double-check report is still pending (might have been synced by another process)
-      if (report.status !== 'pending') {
-        console.log(`⏭️  Report ${report.id} status is ${report.status}, skipping...`);
+      const freshPending = await window.offlineStorage.getPendingReports();
+      const stillPending = freshPending.find(r => r.id === report.id && r.status === 'pending');
+      
+      if (!stillPending) {
+        console.log(`⏭️  Report ${report.id} no longer pending, skipping...`);
         continue;
       }
 
+      // Mark as syncing BEFORE syncing to prevent duplicates
+      await window.offlineStorage.updateReportStatus(report.id, 'syncing');
       console.log(`🔄 Syncing report ${report.id}...`);
+      
       const result = await syncReport(report);
       
-      // Refresh pending list after each sync
-      currentPending = await window.offlineStorage.getPendingReports();
       if (result.success) {
         synced++;
+        // Report is already removed by syncReport on success
       } else {
         failed++;
-        // If retry count is too high, mark as permanently failed
+        // Mark back as pending if sync failed (unless retry limit reached)
         if (report.retryCount >= 5) {
           await window.offlineStorage.updateReportStatus(report.id, 'permanently_failed');
+        } else {
+          await window.offlineStorage.updateReportStatus(report.id, 'pending');
         }
       }
 
