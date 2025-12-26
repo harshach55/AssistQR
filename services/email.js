@@ -461,54 +461,12 @@ async function sendAccidentAlertEmail({ vehicle, contact, lat, lng, imageUrls = 
       manualLocation && `Manual location description: ${manualLocation}`
     ].filter(Boolean).join('\n') + (mapsLink || manualLocation ? '\n' : '');
 
+    // Note: Brevo API doesn't support inline images via CID attachments
+    // We'll use direct image URLs in the HTML instead
     const attachments = [];
-    const imageCids = [];
     
     if (imageUrls.length > 0) {
-      console.log(`   - Processing ${imageUrls.length} image(s) for email attachment...`);
-      
-      const imagePromises = imageUrls.map(async (url, i) => {
-        try {
-          const imageBuffer = await downloadImage(url);
-          if (imageBuffer) {
-            const cid = `image_${i}_${Date.now()}`;
-            imageCids.push(cid);
-            
-            let optimizedBuffer;
-            try {
-              optimizedBuffer = await sharp(imageBuffer)
-                .resize(1200, null, { 
-                  withoutEnlargement: true,
-                  fit: 'inside'
-                })
-                .jpeg({ 
-                  quality: 85,
-                  mozjpeg: true
-                })
-                .toBuffer();
-              
-              if (optimizedBuffer.length < imageBuffer.length) {
-                imageBuffer = optimizedBuffer;
-              }
-            } catch (sharpError) {
-              console.warn(`   ⚠️  Could not optimize image ${i + 1}, using original:`, sharpError.message);
-            }
-            
-            return {
-              filename: `accident_photo_${i + 1}.jpg`,
-              content: imageBuffer,
-              cid: cid,
-              contentType: 'image/jpeg'
-            };
-          }
-        } catch (error) {
-          console.warn(`   ⚠️  Could not process image ${i + 1} (${url}):`, error.message);
-          return null;
-        }
-      });
-      
-      const imageResults = await Promise.all(imagePromises);
-      attachments.push(...imageResults.filter(result => result !== null));
+      console.log(`   - Using ${imageUrls.length} image(s) as direct URLs in email body (Brevo doesn't support inline attachments)`);
     }
 
     let imagesHtml = '';
@@ -582,21 +540,12 @@ AssistQR - Vehicle Safety System
                 ${helperNote ? `<div class="info-row"><span class="label">Helper Note:</span> ${helperNote}</div>` : ''}
               </div>
               
-              ${imageCids.length > 0 ? `
+              ${imageUrls.length > 0 ? `
               <div class="section">
-                <h3>Accident Photos (${imageCids.length} photo${imageCids.length > 1 ? 's' : ''})</h3>
+                <h3>Accident Photos (${imageUrls.length} photo${imageUrls.length > 1 ? 's' : ''})</h3>
                 <div class="images">
-                  ${imageCids.map((cid, index) => `<img src="cid:${cid}" alt="Accident photo ${index + 1}" style="max-width: 100%; height: auto; margin: 10px 0; border: 2px solid #ddd; border-radius: 5px; display: block;" />`).join('')}
+                  ${imageUrls.map((url, index) => `<img src="${url}" alt="Accident photo ${index + 1}" style="max-width: 100%; height: auto; margin: 10px 0; border: 2px solid #ddd; border-radius: 5px; display: block;" />`).join('')}
                 </div>
-              </div>
-              ` : ''}
-              ${imageUrls.length > 0 && imageCids.length === 0 ? `
-              <div class="section">
-                <h3>Accident Photos</h3>
-                <p>Photos are available at the following links:</p>
-                <ul>
-                  ${imageUrls.map((url, index) => `<li><a href="${url}" target="_blank">Photo ${index + 1}</a></li>`).join('')}
-                </ul>
               </div>
               ` : ''}
               
@@ -617,7 +566,7 @@ AssistQR - Vehicle Safety System
     console.log(`📧 Sending email to: ${contact.email}`);
     console.log(`   - Vehicle: ${vehicle.licensePlate}`);
     console.log(`   - Location: ${lat && lng ? `${lat}, ${lng}` : manualLocation || 'Not provided'}`);
-    console.log(`   - Photos: ${imageUrls.length} image(s) - ${imageCids.length} attached as inline`);
+    console.log(`   - Photos: ${imageUrls.length} image(s) - using direct URLs in email body`);
     console.log(`   - Helper Note: ${helperNote ? 'Yes' : 'No'}`);
 
     // Try email services in priority order
