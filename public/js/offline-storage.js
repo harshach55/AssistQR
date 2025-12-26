@@ -142,7 +142,11 @@ async function getPendingReports() {
 
     return new Promise((resolve, reject) => {
       request.onsuccess = () => {
-        resolve(request.result || []);
+        const reports = request.result || [];
+        // Filter out any reports that are currently syncing (safety check)
+        const pendingOnly = reports.filter(r => r.status === 'pending');
+        console.log(`📋 Found ${pendingOnly.length} pending report(s) (${reports.length - pendingOnly.length} in other states)`);
+        resolve(pendingOnly);
       };
       request.onerror = () => {
         console.error('❌ Error getting pending reports:', request.error);
