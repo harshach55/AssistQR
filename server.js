@@ -4,10 +4,14 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
+const pgSession = require('connect-pg-simple')(session);
 const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Trust proxy for Render (required for correct IP and secure cookies)
+app.set('trust proxy', 1);
 
 // Middleware: Parse request bodies and serve static files
 app.use(express.urlencoded({ extended: true }));
@@ -15,14 +19,20 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Session: Store user login state
+// Session: Store user login state in PostgreSQL
 app.use(session({
+  store: new pgSession({
+    conString: process.env.DATABASE_URL,
+    tableName: 'user_sessions',
+    createTableIfMissing: true
+  }),
   secret: process.env.SESSION_SECRET || 'change-this-secret-key',
-  resave: false,
+  resave: true, // Save session even if not modified (for better persistence)
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
     httpOnly: true,
+    sameSite: 'lax', // Required for cross-site requests
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));

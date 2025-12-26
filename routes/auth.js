@@ -36,7 +36,15 @@ router.post('/login', [
     // Create session for logged-in user
     req.session.userId = user.id;
     req.session.userName = user.name;
-    res.redirect('/vehicles');
+    
+    // Explicitly save session before redirect
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+        return res.render('auth/login', { error: 'Session error. Please try again.' });
+      }
+      res.redirect('/vehicles');
+    });
   } catch (error) {
     console.error('Login error:', error);
     const errorMessage = error.code === 'P1001' ? 
@@ -81,7 +89,15 @@ router.post('/signup', [
 
     req.session.userId = user.id;
     req.session.userName = user.name;
-    res.redirect('/vehicles');
+    
+    // Explicitly save session before redirect
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+        return res.render('auth/signup', { error: 'Session error. Please try again.' });
+      }
+      res.redirect('/vehicles');
+    });
   } catch (error) {
     console.error('Signup error:', error);
     const errorMessage = error.code === 'P1001' ? 
