@@ -183,27 +183,68 @@ async function getReportImages(reportId) {
         // Convert ArrayBuffers back to File objects
         const files = images.map((img, index) => {
           try {
-            // img.blob is an ArrayBuffer, convert to Blob then File
-            if (!img.blob || !(img.blob instanceof ArrayBuffer)) {
-              console.error(`❌ Image ${index + 1} blob is invalid:`, img);
+            // img.blob should be an ArrayBuffer
+            let arrayBuffer = img.blob;
+            
+            // Handle different storage formats
+            if (!arrayBuffer) {
+              console.error(`❌ Image ${index + 1} has no blob data:`, img);
               return null;
             }
             
-            const blob = new Blob([img.blob], { type: img.type || 'image/jpeg' });
-            const file = new File([blob], img.filename || `image_${index + 1}.jpg`, { 
-              type: img.type || 'image/jpeg',
+            // If it's already an ArrayBuffer, use it directly
+            // If it's stored as something else, try to convert
+            if (!(arrayBuffer instanceof ArrayBuffer)) {
+              // Try to convert if it's a different type
+              if (arrayBuffer instanceof Uint8Array) {
+                arrayBuffer = arrayBuffer.buffer;
+              } else if (typeof arrayBuffer === 'object' && arrayBuffer.byteLength !== undefined) {
+                // Might be a typed array, get the underlying buffer
+                arrayBuffer = arrayBuffer.buffer || arrayBuffer;
+              } else {
+                console.error(`❌ Image ${index + 1} blob is not an ArrayBuffer. Type: ${typeof arrayBuffer}, constructor: ${arrayBuffer?.constructor?.name}`);
+                return null;
+              }
+            }
+            
+            // Verify ArrayBuffer has data
+            if (!(arrayBuffer instanceof ArrayBuffer) || arrayBuffer.byteLength === 0) {
+              console.error(`❌ Image ${index + 1} ArrayBuffer is invalid or empty (${arrayBuffer?.byteLength || 0} bytes)`);
+              return null;
+            }
+            
+            console.log(`🔄 Converting image ${index + 1}: ArrayBuffer size = ${arrayBuffer.byteLength} bytes`);
+            
+            // Create Blob from ArrayBuffer
+            const blob = new Blob([arrayBuffer], { type: img.type || 'image/jpeg' });
+            
+            if (blob.size === 0) {
+              console.error(`❌ Image ${index + 1} Blob has zero size after creation`);
+              return null;
+            }
+            
+            // Create File from Blob (File constructor accepts BlobParts directly)
+            const fileName = img.filename || `image_${index + 1}.jpg`;
+            const fileType = img.type || 'image/jpeg';
+            const file = new File([blob], fileName, { 
+              type: fileType,
               lastModified: img.timestamp || Date.now()
             });
             
             if (file.size === 0) {
-              console.error(`❌ Image ${index + 1} has zero size after conversion`);
+              console.error(`❌ Image ${index + 1} File has zero size after conversion`);
               return null;
+            }
+            
+            // Verify sizes match
+            if (file.size !== arrayBuffer.byteLength) {
+              console.warn(`⚠️ Image ${index + 1} size mismatch: ArrayBuffer=${arrayBuffer.byteLength}, File=${file.size}`);
             }
             
             console.log(`✅ Converted image ${index + 1}: ${file.name} (${file.size} bytes, type: ${file.type})`);
             return file;
           } catch (error) {
-            console.error(`❌ Error converting image ${index + 1}:`, error);
+            console.error(`❌ Error converting image ${index + 1}:`, error, error.stack);
             return null;
           }
         }).filter(file => file !== null && file.size > 0);

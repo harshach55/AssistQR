@@ -4,14 +4,10 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
-const pgSession = require('connect-pg-simple')(session);
 const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Trust proxy (required for Render and other hosting platforms)
-app.set('trust proxy', 1);
 
 // Middleware: Parse request bodies and serve static files
 app.use(express.urlencoded({ extended: true }));
@@ -19,34 +15,15 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Session: Store user login state (using PostgreSQL store for production)
-let sessionStore;
-try {
-  if (process.env.DATABASE_URL) {
-    sessionStore = new pgSession({
-      conString: process.env.DATABASE_URL,
-      tableName: 'user_sessions',
-      createTableIfMissing: true
-    });
-    console.log('✅ PostgreSQL session store initialized');
-  } else {
-    console.warn('⚠️  DATABASE_URL not found, using MemoryStore (not recommended for production)');
-  }
-} catch (error) {
-  console.error('❌ Error initializing session store:', error);
-  sessionStore = undefined;
-}
-
+// Session: Store user login state
 app.use(session({
-  store: sessionStore,
   secret: process.env.SESSION_SECRET || 'change-this-secret-key',
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: 'lax'
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
 

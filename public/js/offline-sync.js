@@ -80,26 +80,46 @@ async function syncReport(report) {
       console.log(`📎 Adding ${images.length} image(s) to FormData...`);
       images.forEach((file, index) => {
         if (file && file instanceof File) {
-          formData.append('images', file, file.name);
-          console.log(`📎 Added image ${index + 1} to FormData: ${file.name} (${file.size} bytes, type: ${file.type})`);
+          // Ensure file has proper name and type
+          const fileName = file.name || `image_${index + 1}.jpg`;
+          const fileType = file.type || 'image/jpeg';
+          
+          // Create a new File with explicit properties to ensure compatibility
+          const fileToSend = new File([file], fileName, {
+            type: fileType,
+            lastModified: file.lastModified || Date.now()
+          });
+          
+          formData.append('images', fileToSend);
+          console.log(`📎 Added image ${index + 1} to FormData: ${fileToSend.name} (${fileToSend.size} bytes, type: ${fileToSend.type})`);
         } else {
-          console.warn(`⚠️ Image ${index + 1} is not a valid File object:`, file);
+          console.warn(`⚠️ Image ${index + 1} is not a valid File object:`, file, typeof file);
         }
       });
       
       // Verify images are in FormData
       const formDataImages = formData.getAll('images');
       console.log(`✅ FormData now contains ${formDataImages.length} image(s)`);
+      
+      // Log FormData entries for debugging (can't directly inspect FormData, but we can count)
+      if (formDataImages.length !== images.length) {
+        console.error(`❌ FormData mismatch: Expected ${images.length} images, but FormData has ${formDataImages.length}`);
+      }
     } else {
       console.log('⚠️ No images found for this report');
     }
 
     // Submit to server
+    console.log('🚀 Submitting report to server...');
     const response = await fetch('/accidents/report', {
       method: 'POST',
       body: formData
     });
 
+    // Log response for debugging
+    const responseText = await response.text();
+    console.log(`📥 Server response: ${response.status} ${response.statusText}`);
+    
     if (response.ok) {
       // Success - remove from queue IMMEDIATELY to prevent duplicate syncs
       await window.offlineStorage.removeReport(report.id);
@@ -108,7 +128,7 @@ async function syncReport(report) {
     } else {
       // Failed - update status
       await window.offlineStorage.updateReportStatus(report.id, 'failed');
-      console.error('❌ Report sync failed:', response.status);
+      console.error('❌ Report sync failed:', response.status, responseText.substring(0, 200));
       return { success: false, error: `HTTP ${response.status}` };
     }
   } catch (error) {

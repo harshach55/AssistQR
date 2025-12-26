@@ -85,6 +85,16 @@ router.post('/report', (req, res, next) => {
     const lat = latitude ? parseFloat(latitude) : null;
     const lng = longitude ? parseFloat(longitude) : null;
 
+    // Log received files for debugging
+    console.log(`📷 Received ${req.files ? req.files.length : 0} file(s) for accident report`);
+    if (req.files && req.files.length > 0) {
+      req.files.forEach((file, index) => {
+        console.log(`  File ${index + 1}: ${file.originalname || file.filename || file.key} (${file.size || 'unknown size'} bytes, type: ${file.mimetype || file.contentType || 'unknown'})`);
+      });
+    } else {
+      console.warn('⚠️ No files received in request');
+    }
+
     const imageUrls = (req.files || []).map(file => 
       file.location || getFileUrl(file.filename || file.key)
     ).filter(Boolean);
