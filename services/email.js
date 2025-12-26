@@ -184,10 +184,20 @@ async function sendViaBrevoAPI({ to, subject, html, text, attachments = [] }) {
 
     // Add attachments if any
     if (attachments.length > 0) {
-      payload.attachment = attachments.map(att => ({
-        name: att.filename,
-        content: att.content.toString('base64')
-      }));
+      payload.attachment = attachments.map(att => {
+        const attachment = {
+          name: att.filename,
+          content: att.content.toString('base64')
+        };
+        // If attachment has a cid, use it as contentId for inline images
+        if (att.cid) {
+          attachment.contentId = att.cid;
+          console.log(`   📎 Adding inline image: ${att.filename} with contentId: ${att.cid}`);
+        } else {
+          console.log(`   📎 Adding attachment: ${att.filename}`);
+        }
+        return attachment;
+      });
     }
 
     const postData = JSON.stringify(payload);
