@@ -170,24 +170,41 @@ async function getReportImages(reportId) {
         const images = request.result || [];
         console.log(`📷 Retrieved ${images.length} image(s) from storage for report ${reportId}`);
         
+        if (images.length === 0) {
+          console.warn(`⚠️ No images found for report ${reportId}`);
+          resolve([]);
+          return;
+        }
+        
         // Convert ArrayBuffers back to File objects
         const files = images.map((img, index) => {
           try {
             // img.blob is an ArrayBuffer, convert to Blob then File
+            if (!img.blob || !(img.blob instanceof ArrayBuffer)) {
+              console.error(`❌ Image ${index + 1} blob is invalid:`, img);
+              return null;
+            }
+            
             const blob = new Blob([img.blob], { type: img.type || 'image/jpeg' });
             const file = new File([blob], img.filename || `image_${index + 1}.jpg`, { 
               type: img.type || 'image/jpeg',
               lastModified: img.timestamp || Date.now()
             });
-            console.log(`✅ Converted image ${index + 1}: ${file.name} (${file.size} bytes)`);
+            
+            if (file.size === 0) {
+              console.error(`❌ Image ${index + 1} has zero size after conversion`);
+              return null;
+            }
+            
+            console.log(`✅ Converted image ${index + 1}: ${file.name} (${file.size} bytes, type: ${file.type})`);
             return file;
           } catch (error) {
             console.error(`❌ Error converting image ${index + 1}:`, error);
             return null;
           }
-        }).filter(file => file !== null);
+        }).filter(file => file !== null && file.size > 0);
         
-        console.log(`✅ Returning ${files.length} valid image file(s)`);
+        console.log(`✅ Returning ${files.length} valid image file(s) for report ${reportId}`);
         resolve(files);
       };
       request.onerror = () => {
