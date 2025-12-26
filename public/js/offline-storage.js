@@ -108,11 +108,13 @@ async function storeImage(file, reportId) {
       timestamp: Date.now()
     };
 
+    console.log(`💾 Storing image for report ${reportId}: ${imageData.filename} (${arrayBuffer.byteLength} bytes, type: ${imageData.type})`);
+
     const request = store.add(imageData);
 
     return new Promise((resolve, reject) => {
       request.onsuccess = () => {
-        console.log('✅ Image stored:', request.result);
+        console.log(`✅ Image stored with ID ${request.result} for report ${reportId}`);
         resolve(request.result);
       };
       request.onerror = () => {

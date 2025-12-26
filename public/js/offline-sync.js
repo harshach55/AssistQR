@@ -24,12 +24,19 @@ async function syncReport(report) {
 
     // Add images
     if (images && images.length > 0) {
+      console.log(`📎 Adding ${images.length} image(s) to FormData...`);
       images.forEach((file, index) => {
         if (file && file instanceof File) {
-          formData.append('images', file);
-          console.log(`📎 Added image ${index + 1}: ${file.name} (${file.size} bytes)`);
+          formData.append('images', file, file.name);
+          console.log(`📎 Added image ${index + 1} to FormData: ${file.name} (${file.size} bytes, type: ${file.type})`);
+        } else {
+          console.warn(`⚠️ Image ${index + 1} is not a valid File object:`, file);
         }
       });
+      
+      // Verify images are in FormData
+      const formDataImages = formData.getAll('images');
+      console.log(`✅ FormData now contains ${formDataImages.length} image(s)`);
     } else {
       console.log('⚠️ No images found for this report');
     }
