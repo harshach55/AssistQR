@@ -86,6 +86,9 @@
                     <div id="location-status" class="location-status info">
                         Requesting location access...
                     </div>
+                    <div id="offline-location-note" style="display: none; padding: 0.75rem; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; margin-bottom: 1rem; font-size: 0.875rem;">
+                        <strong>📴 Offline Mode:</strong> GPS and location search are not available. Please enter location details manually below.
+                    </div>
                     
                     <!-- Location Search -->
                     <div style="margin-bottom: 1rem; position: relative;">
@@ -502,21 +505,33 @@
 
         // Initialize Offline Storage
         let offlineStorageReady = false;
-        window.addEventListener('load', async () => {
-            try {
-                await window.offlineStorage.init();
-                offlineStorageReady = true;
-                console.log('✅ Offline storage initialized');
-                
-                // Update pending count
-                await window.offlineSync.updatePendingCount();
-                
-                // Initialize sync
-                await window.offlineSync.initSync();
-            } catch (error) {
-                console.error('❌ Failed to initialize offline storage:', error);
+        
+        // Initialize immediately if offlineStorage is available
+        async function initOfflineStorage() {
+            if (window.offlineStorage && !offlineStorageReady) {
+                try {
+                    await window.offlineStorage.init();
+                    offlineStorageReady = true;
+                    console.log('✅ Offline storage initialized');
+                    
+                    // Update pending count
+                    if (window.offlineSync) {
+                        await window.offlineSync.updatePendingCount();
+                        await window.offlineSync.initSync();
+                    }
+                } catch (error) {
+                    console.error('❌ Failed to initialize offline storage:', error);
+                }
             }
-        });
+        }
+        
+        // Initialize on page load
+        window.addEventListener('load', initOfflineStorage);
+        
+        // Also try to initialize immediately if scripts are already loaded
+        if (window.offlineStorage) {
+            initOfflineStorage();
+        }
 
         // Service Worker Registration for Offline Support
         // Note: Service Workers require HTTPS on mobile (except localhost)
@@ -558,13 +573,22 @@
         // Update offline status indicator
         function updateOfflineStatus() {
             const offlineStatus = document.getElementById('offline-status');
-            const isOnline = window.offlineStorage.isOnline();
+            const offlineLocationNote = document.getElementById('offline-location-note');
+            const isOnline = window.offlineStorage && window.offlineStorage.isOnline ? window.offlineStorage.isOnline() : navigator.onLine;
             
             if (offlineStatus) {
                 if (!isOnline) {
                     offlineStatus.style.display = 'block';
                 } else {
                     offlineStatus.style.display = 'none';
+                }
+            }
+            
+            if (offlineLocationNote) {
+                if (!isOnline) {
+                    offlineLocationNote.style.display = 'block';
+                } else {
+                    offlineLocationNote.style.display = 'none';
                 }
             }
         }
@@ -662,12 +686,27 @@
             const hasCoordinates = latitudeInput.value && longitudeInput.value;
             const hasManualLocation = document.getElementById('manualLocation').value.trim();
             
-            if (!hasCoordinates && !hasManualLocation) {
-                e.preventDefault();
-                locationStatus.className = 'location-status error';
-                locationStatus.textContent = '⚠️ Please provide a location (use current location, search, or enter manual location details).';
-                locationStatus.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                return;
+            // Check if we're offline
+            const isOnline = window.offlineStorage && window.offlineStorage.isOnline ? window.offlineStorage.isOnline() : navigator.onLine;
+            
+            // When offline, only require manual location (GPS/search won't work)
+            if (!isOnline) {
+                if (!hasManualLocation) {
+                    e.preventDefault();
+                    locationStatus.className = 'location-status error';
+                    locationStatus.textContent = '⚠️ Please enter location details manually (GPS and search don\'t work offline).';
+                    locationStatus.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return;
+                }
+            } else {
+                // When online, require either coordinates or manual location
+                if (!hasCoordinates && !hasManualLocation) {
+                    e.preventDefault();
+                    locationStatus.className = 'location-status error';
+                    locationStatus.textContent = '⚠️ Please provide a location (use current location, search, or enter manual location details).';
+                    locationStatus.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return;
+                }
             }
 
             const submitBtn = form.querySelector('button[type="submit"]');
@@ -675,13 +714,17 @@
             
             // Check connectivity
             const { hasInternet, hasCellular } = checkConnectivity();
-            const isOnline = window.offlineStorage && window.offlineStorage.isOnline();
             
             if (!hasInternet || !isOnline) {
                 e.preventDefault();
                 
+                // Ensure offline storage is ready (try to initialize if not ready)
+                if (!offlineStorageReady) {
+                    await initOfflineStorage();
+                }
+                
                 // Try to queue the report offline
-                if (offlineStorageReady) {
+                if (window.offlineStorage && offlineStorageReady) {
                     try {
                         submitBtn.textContent = 'Saving Offline...';
                         
@@ -757,9 +800,59 @@
                         submitBtn.textContent = 'SMS Sent';
                     }, 500);
                 } else {
+                    // Last resort: try to save to IndexedDB even if initialization failed
+                    if (window.offlineStorage) {
+                        try {
+                            await initOfflineStorage();
+                            if (offlineStorageReady) {
+                                // Retry saving
+                                submitBtn.textContent = 'Saving Offline...';
+                                const formData = new FormData(form);
+                                const reportId = await window.offlineStorage.queueReport({
+                                    qrToken: formData.get('qrToken'),
+                                    latitude: formData.get('latitude') || null,
+                                    longitude: formData.get('longitude') || null,
+                                    manualLocation: formData.get('manualLocation') || null,
+                                    helperNote: formData.get('helperNote') || null
+                                });
+                                
+                                const imageFiles = formData.getAll('images');
+                                for (const file of imageFiles) {
+                                    if (file && file.size > 0) {
+                                        await window.offlineStorage.storeImage(file, reportId);
+                                    }
+                                }
+                                
+                                submitBtn.textContent = 'Saved Offline ✓';
+                                locationStatus.className = 'location-status success';
+                                locationStatus.textContent = '✅ Report saved offline! It will be sent automatically when connection is restored.';
+                                
+                                if (window.offlineSync) {
+                                    await window.offlineSync.updatePendingCount();
+                                    window.offlineSync.registerBackgroundSync();
+                                }
+                                
+                                setTimeout(() => {
+                                    form.reset();
+                                    imagePreviewContainer.innerHTML = '';
+                                    latitudeInput.value = '';
+                                    longitudeInput.value = '';
+                                    selectedLocationDisplay.textContent = '';
+                                    locationStatus.className = 'location-status info';
+                                    locationStatus.textContent = 'No location selected. Click "Use Current Location" or search for a location.';
+                                    submitBtn.disabled = false;
+                                    submitBtn.textContent = 'Submit Emergency Report';
+                                }, 2000);
+                                return;
+                            }
+                        } catch (error) {
+                            console.error('❌ Final attempt to save offline failed:', error);
+                        }
+                    }
+                    
                     submitBtn.textContent = 'No Connection';
                     locationStatus.className = 'location-status error';
-                    locationStatus.textContent = '⚠️ No internet or cellular connection. Report could not be saved.';
+                    locationStatus.textContent = '⚠️ No internet or cellular connection. Please connect to internet to submit the report.';
                     submitBtn.disabled = false;
                 }
                 return;
