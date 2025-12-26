@@ -1,69 +1,71 @@
 // Email Service
 // Sends emergency alert emails with vehicle details, location, and photos
+// Priority: Brevo API > Brevo SMTP > Mailgun API > Resend API > SendGrid > Nodemailer SMTP
 
 const nodemailer = require('nodemailer');
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');
+const FormData = require('form-data');
 
-let transporter = null;
-let useResend = false;
-let useBrevo = false;
-let useMailgun = false;
+const fs = require('fs');
+const path = require('path');
+const sharp = require('sharp');
 
-// Support for Brevo SMTP (works when API needs activation), Brevo API, Resend, SendGrid, or SMTP
-if (process.env.BREVO_SMTP_KEY) {
-  // Use Brevo SMTP (alternative when API account needs activation)
-  // SMTP login format: [userid]@smtp-brevo.com (e.g., 9e48fe001@smtp-brevo.com)
-  // If BREVO_SMTP_USER not provided, user needs to get it from Brevo dashboard
-  const smtpUser = process.env.BREVO_SMTP_USER;
-  if (!smtpUser) {
-    console.warn('⚠️  BREVO_SMTP_USER not set. Get your SMTP login from Brevo dashboard (Settings → SMTP & API → Your SMTP Settings → Login)');
-  }
-  transporter = nodemailer.createTransport({
+// Check which email services are configured
+const emailConfig = {
+  brevoApi: process.env.BREVO_API_KEY,
+  brevoSmtp: process.env.BREVO_SMTP_KEY && process.env.BREVO_SMTP_USER,
+  mailgun: process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN,
+  resend: process.env.RESEND_API_KEY,
+  sendgrid: process.env.SENDGRID_API_KEY,
+  smtp: process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
+};
+
+// Log configured services
+if (emailConfig.brevoApi) {
+  console.log(`✅ Brevo API configured (key: ${process.env.BREVO_API_KEY.substring(0, 20)}...)`);
+}
+if (emailConfig.brevoSmtp) {
+  console.log(`✅ Brevo SMTP configured`);
+}
+if (emailConfig.mailgun) {
+  console.log(`✅ Mailgun API configured`);
+}
+if (emailConfig.resend) {
+  console.log(`✅ Resend API configured`);
+}
+if (emailConfig.sendgrid) {
+  console.log(`✅ SendGrid API configured`);
+}
+if (emailConfig.smtp) {
+  console.log(`✅ SMTP configured (${process.env.SMTP_HOST})`);
+}
+if (!Object.values(emailConfig).some(v => v)) {
+  console.warn('⚠️  No email service configured. Email notifications will not be sent.');
+}
+
+// Initialize SMTP transporter (for Brevo SMTP and regular SMTP)
+let brevoSmtpTransporter = null;
+let smtpTransporter = null;
+
+if (emailConfig.brevoSmtp) {
+  brevoSmtpTransporter = nodemailer.createTransport({
     host: 'smtp-relay.brevo.com',
     port: 587,
     secure: false,
     auth: {
-      user: smtpUser,
+      user: process.env.BREVO_SMTP_USER,
       pass: process.env.BREVO_SMTP_KEY
     },
     connectionTimeout: 60000,
-    greetingTimeout: 15000,
-    socketTimeout: 60000,
-    requireTLS: true,
-    tls: {
-      rejectUnauthorized: false
-    }
+    greetingTimeout: 30000,
+    socketTimeout: 60000
   });
-  console.log('✅ Brevo SMTP configured');
-} else if (process.env.BREVO_API_KEY) {
-  // Use Brevo API (300 emails/day = 9,000/month free, no phone verification)
-  useBrevo = true;
-  // Log first 10 chars for debugging (don't log full key for security)
-  const keyPreview = process.env.BREVO_API_KEY.substring(0, 10) + '...';
-  console.log(`✅ Brevo API configured (key: ${keyPreview})`);
-} else if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN) {
-  // Use Mailgun API (5,000 emails/month free for 3 months, then 1,000/month)
-  useMailgun = true;
-  console.log('✅ Mailgun API configured');
-} else if (process.env.RESEND_API_KEY) {
-  // Use Resend API (no phone verification required, works with Render free tier)
-  useResend = true;
-  console.log('✅ Resend API configured');
-} else if (process.env.SENDGRID_API_KEY) {
-  // Use SendGrid (works better with Render free tier)
-  transporter = nodemailer.createTransport({
-    service: 'SendGrid',
-    auth: {
-      user: 'apikey',
-      pass: process.env.SENDGRID_API_KEY
-    }
-  });
-  console.log('✅ SendGrid transporter configured');
-} else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-  // Use SMTP (Gmail, etc.)
-  transporter = nodemailer.createTransport({
+}
+
+if (emailConfig.smtp) {
+  smtpTransporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '587'),
     secure: process.env.SMTP_PORT === '465',
@@ -72,39 +74,28 @@ if (process.env.BREVO_SMTP_KEY) {
       pass: process.env.SMTP_PASS
     },
     connectionTimeout: 60000,
-    greetingTimeout: 15000,
+    greetingTimeout: 30000,
     socketTimeout: 60000,
     pool: true,
     maxConnections: 5,
     maxMessages: 100,
     requireTLS: true,
     tls: {
-      rejectUnauthorized: false,
-      ciphers: 'SSLv3'
+      rejectUnauthorized: false
     }
   });
 
-  // Verify connection (disabled on startup to avoid timeout issues on Render)
-  // Connection will be verified when actually sending emails
+  // Only verify in development
   if (process.env.NODE_ENV !== 'production') {
-    transporter.verify(function(error, success) {
+    smtpTransporter.verify(function(error, success) {
       if (error) {
         console.error('❌ SMTP connection error:', error.message);
       } else {
         console.log('✅ SMTP server is ready to send emails');
       }
     });
-  } else {
-    console.log('✅ SMTP transporter configured (verification skipped in production)');
   }
-} else {
-  console.warn('⚠️  Email not configured. Email notifications will not be sent.');
-  console.warn('   Please add MAILGUN_API_KEY + MAILGUN_DOMAIN, BREVO_API_KEY (contact Brevo to activate), RESEND_API_KEY, SENDGRID_API_KEY, or SMTP settings to enable email notifications.');
 }
-
-const fs = require('fs');
-const path = require('path');
-const sharp = require('sharp');
 
 function downloadImage(url) {
   return new Promise((resolve, reject) => {
@@ -114,15 +105,15 @@ function downloadImage(url) {
       if (url.includes('/uploads/accidents/')) {
         const filename = url.split('/uploads/accidents/')[1]?.split('?')[0];
         if (filename) {
-        const filePath = path.join(uploadsPath, filename);
-        
-        if (fs.existsSync(filePath)) {
-          try {
-            const buffer = fs.readFileSync(filePath);
-            resolve(buffer);
-            return;
-          } catch (error) {
-            console.warn(`   ⚠️  Could not read local file, trying HTTP download: ${error.message}`);
+          const filePath = path.join(uploadsPath, filename);
+          
+          if (fs.existsSync(filePath)) {
+            try {
+              const buffer = fs.readFileSync(filePath);
+              resolve(buffer);
+              return;
+            } catch (error) {
+              console.warn(`   ⚠️  Could not read local file, trying HTTP download: ${error.message}`);
             }
           }
         }
@@ -132,7 +123,7 @@ function downloadImage(url) {
       const client = parsedUrl.protocol === 'https:' ? https : http;
       
       const request = client.get(url, {
-        timeout: 5000
+        timeout: 10000
       }, (response) => {
         if (response.statusCode !== 200) {
           reject(new Error(`Failed to download image: ${response.statusCode}`));
@@ -156,9 +147,294 @@ function downloadImage(url) {
   });
 }
 
+// Helper function to extract email from "Name <email>" format
+function extractEmail(emailString) {
+  const match = emailString.match(/<(.+)>/);
+  return match ? match[1] : emailString;
+}
+
+// Helper function to extract name from "Name <email>" format
+function extractName(emailString) {
+  const match = emailString.match(/^(.+?)\s*</);
+  return match ? match[1].trim() : '';
+}
+
+// Brevo API email sending
+async function sendViaBrevoAPI({ to, subject, html, text, attachments = [] }) {
+  return new Promise((resolve, reject) => {
+    const fromEmail = process.env.BREVO_FROM 
+      ? extractEmail(process.env.BREVO_FROM)
+      : 'noreply@assistqr.com';
+    const fromName = process.env.BREVO_FROM 
+      ? extractName(process.env.BREVO_FROM) || 'AssistQR'
+      : 'AssistQR';
+
+    const payload = {
+      sender: {
+        name: fromName,
+        email: fromEmail
+      },
+      to: [{ email: to }],
+      subject: subject,
+      htmlContent: html,
+      textContent: text
+    };
+
+    // Add attachments if any
+    if (attachments.length > 0) {
+      payload.attachment = attachments.map(att => ({
+        name: att.filename,
+        content: att.content.toString('base64')
+      }));
+    }
+
+    const postData = JSON.stringify(payload);
+    const options = {
+      hostname: 'api.brevo.com',
+      path: '/v3/smtp/email',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'api-key': process.env.BREVO_API_KEY
+      },
+      timeout: 30000
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          const response = JSON.parse(data);
+          resolve({ success: true, messageId: response.messageId || 'unknown' });
+        } else {
+          try {
+            const error = JSON.parse(data);
+            reject(new Error(error.message || `Brevo API error: ${data}`));
+          } catch (e) {
+            reject(new Error(`Brevo API error: ${data}`));
+          }
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      reject(new Error(`Brevo API request failed: ${error.message}`));
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Brevo API request timeout'));
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Resend API email sending
+async function sendViaResendAPI({ to, subject, html, text, attachments = [] }) {
+  return new Promise((resolve, reject) => {
+    // Use default Resend domain if RESEND_FROM is not set or is a placeholder
+    let fromEmail = 'onboarding@resend.dev';
+    if (process.env.RESEND_FROM && !process.env.RESEND_FROM.includes('yourdomain.com')) {
+      fromEmail = extractEmail(process.env.RESEND_FROM);
+    }
+
+    const payload = {
+      from: fromEmail,
+      to: [to],
+      subject: subject,
+      html: html,
+      text: text
+    };
+
+    // Add attachments if any
+    if (attachments.length > 0) {
+      payload.attachments = attachments.map(att => ({
+        filename: att.filename,
+        content: att.content.toString('base64')
+      }));
+    }
+
+    const postData = JSON.stringify(payload);
+    const options = {
+      hostname: 'api.resend.com',
+      path: '/emails',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`
+      },
+      timeout: 30000
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          const response = JSON.parse(data);
+          resolve({ success: true, messageId: response.id || 'unknown' });
+        } else {
+          try {
+            const error = JSON.parse(data);
+            reject(new Error(error.message || `Resend API error: ${data}`));
+          } catch (e) {
+            reject(new Error(`Resend API error: ${data}`));
+          }
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      reject(new Error(`Resend API request failed: ${error.message}`));
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Resend API request timeout'));
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Mailgun API email sending
+async function sendViaMailgunAPI({ to, subject, html, text, attachments = [] }) {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append('from', process.env.MAILGUN_FROM || `AssistQR <noreply@${process.env.MAILGUN_DOMAIN}>`);
+    form.append('to', to);
+    form.append('subject', subject);
+    form.append('html', html);
+    form.append('text', text);
+
+    // Add attachments if any
+    attachments.forEach(att => {
+      form.append('attachment', att.content, {
+        filename: att.filename,
+        contentType: att.contentType || 'application/octet-stream'
+      });
+    });
+
+    const auth = Buffer.from(`api:${process.env.MAILGUN_API_KEY}`).toString('base64');
+    const options = {
+      hostname: 'api.mailgun.net',
+      path: `/v3/${process.env.MAILGUN_DOMAIN}/messages`,
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        ...form.getHeaders()
+      },
+      timeout: 30000
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          const response = JSON.parse(data);
+          resolve({ success: true, messageId: response.id || 'unknown' });
+        } else {
+          try {
+            const error = JSON.parse(data);
+            reject(new Error(error.message || `Mailgun API error: ${data}`));
+          } catch (e) {
+            reject(new Error(`Mailgun API error: ${data}`));
+          }
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      reject(new Error(`Mailgun API request failed: ${error.message}`));
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Mailgun API request timeout'));
+    });
+
+    form.pipe(req);
+  });
+}
+
+// SendGrid API email sending
+async function sendViaSendGridAPI({ to, subject, html, text, attachments = [] }) {
+  return new Promise((resolve, reject) => {
+    const payload = {
+      personalizations: [{
+        to: [{ email: to }]
+      }],
+      from: {
+        email: process.env.SENDGRID_FROM || 'noreply@assistqr.com',
+        name: 'AssistQR'
+      },
+      subject: subject,
+      content: [
+        { type: 'text/plain', value: text },
+        { type: 'text/html', value: html }
+      ]
+    };
+
+    // Add attachments if any
+    if (attachments.length > 0) {
+      payload.attachments = attachments.map(att => ({
+        content: att.content.toString('base64'),
+        filename: att.filename,
+        type: att.contentType || 'application/octet-stream',
+        disposition: 'attachment'
+      }));
+    }
+
+    const postData = JSON.stringify(payload);
+    const options = {
+      hostname: 'api.sendgrid.com',
+      path: '/v3/mail/send',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+        'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`
+      },
+      timeout: 30000
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve({ success: true, messageId: res.headers['x-message-id'] || 'unknown' });
+        } else {
+          reject(new Error(`SendGrid API error: ${data || res.statusCode}`));
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      reject(new Error(`SendGrid API request failed: ${error.message}`));
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('SendGrid API request timeout'));
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
 async function sendAccidentAlertEmail({ vehicle, contact, lat, lng, imageUrls = [], helperNote, manualLocation }) {
-  if (!transporter && !useResend && !useBrevo) {
-    const errorMsg = 'Email not configured. Please add BREVO_API_KEY, RESEND_API_KEY, SENDGRID_API_KEY, or SMTP settings in .env file.';
+  // Check if any email service is configured
+  if (!Object.values(emailConfig).some(v => v)) {
+    const errorMsg = 'No email service configured. Please configure at least one email service (Brevo API, Resend, Mailgun, SendGrid, or SMTP).';
     console.error('❌ Email not sent to', contact.email, '-', errorMsg);
     return { success: false, error: errorMsg };
   }
@@ -228,18 +504,8 @@ async function sendAccidentAlertEmail({ vehicle, contact, lat, lng, imageUrls = 
       });
     }
 
-    const mailOptions = {
-      from: process.env.SMTP_FROM_NAME ? `"${process.env.SMTP_FROM_NAME}" <${process.env.SMTP_FROM || process.env.SMTP_USER}>` : (process.env.SMTP_FROM || process.env.SMTP_USER),
-      to: contact.email,
-      subject: `🚨 URGENT: Emergency Alert - Possible Accident Involving Vehicle ${vehicle.licensePlate}`,
-      priority: 'high',
-      headers: {
-        'X-Priority': '1',
-        'X-MSMail-Priority': 'High',
-        'Importance': 'high',
-        'Priority': 'urgent'
-      },
-      text: `
+    const subject = `🚨 URGENT: Emergency Alert - Possible Accident Involving Vehicle ${vehicle.licensePlate}`;
+    const text = `
 Emergency Alert: Possible Accident Report
 
 Vehicle Information:
@@ -259,8 +525,9 @@ If you believe this is a false alarm, please contact the vehicle owner directly.
 
 Thank you,
 AssistQR - Vehicle Safety System
-      `.trim(),
-      html: `
+    `.trim();
+
+    const html = `
         <!DOCTYPE html>
         <html>
         <head>
@@ -330,249 +597,127 @@ AssistQR - Vehicle Safety System
           </div>
         </body>
         </html>
-      `,
-      attachments: attachments // Add inline attachments for images
-    };
+      `;
 
     console.log(`📧 Sending email to: ${contact.email}`);
     console.log(`   - Vehicle: ${vehicle.licensePlate}`);
     console.log(`   - Location: ${lat && lng ? `${lat}, ${lng}` : manualLocation || 'Not provided'}`);
     console.log(`   - Photos: ${imageUrls.length} image(s) - ${imageCids.length} attached as inline`);
     console.log(`   - Helper Note: ${helperNote ? 'Yes' : 'No'}`);
-    
-    // Send email via Mailgun API, Brevo API, Resend API, SendGrid, or SMTP
-    if (useMailgun) {
-      // Use Mailgun API (5,000 emails/month free for 3 months, then 1,000/month)
-      const fromEmail = process.env.MAILGUN_FROM || process.env.SMTP_FROM || `AssistQR <noreply@${process.env.MAILGUN_DOMAIN}>`;
-      
-      // Mailgun uses form-data format
-      const FormData = require('form-data');
-      const form = new FormData();
-      
-      form.append('from', fromEmail);
-      form.append('to', contact.email);
-      form.append('subject', mailOptions.subject);
-      form.append('html', mailOptions.html);
-      form.append('text', mailOptions.text);
-      
-      // Add attachments if any
-      if (attachments.length > 0) {
-        attachments.forEach(att => {
-          form.append('attachment', att.content, {
-            filename: att.filename,
-            contentType: att.contentType
-          });
-        });
+
+    // Try email services in priority order
+    const emailData = { to: contact.email, subject, html, text, attachments };
+
+    // 1. Try Brevo API (highest priority - works on Render)
+    if (emailConfig.brevoApi) {
+      try {
+        console.log('   🔄 Trying Brevo API...');
+        const result = await sendViaBrevoAPI(emailData);
+        console.log(`✅ Email sent successfully via Brevo API to ${contact.email}! Message ID: ${result.messageId}`);
+        return { success: true, messageId: result.messageId, provider: 'Brevo API' };
+      } catch (error) {
+        console.warn(`   ⚠️  Brevo API failed: ${error.message}`);
       }
-      
-      const mailgunOptions = {
-        hostname: 'api.mailgun.net',
-        path: `/v3/${process.env.MAILGUN_DOMAIN}/messages`,
-        method: 'POST',
-        auth: `api:${process.env.MAILGUN_API_KEY}`,
-        headers: form.getHeaders()
-      };
-      
-      return new Promise((resolve, reject) => {
-        const req = https.request(mailgunOptions, (res) => {
-          let data = '';
-          res.on('data', (chunk) => { data += chunk; });
-          res.on('end', () => {
-            if (res.statusCode >= 200 && res.statusCode < 300) {
-              const response = JSON.parse(data);
-              console.log(`✅ Email sent successfully to ${contact.email} via Mailgun! Message ID: ${response.id}`);
-              resolve({ success: true, messageId: response.id });
-            } else {
-              let error;
-              try {
-                error = JSON.parse(data);
-              } catch (e) {
-                error = { message: data || `Mailgun API error: ${res.statusCode}` };
-              }
-              console.error('❌ Mailgun API error:', error);
-              reject(new Error(error.message || `Mailgun API error: ${res.statusCode}`));
-            }
-          });
-        });
-        
-        req.on('error', (error) => {
-          console.error('❌ Mailgun request error:', error);
-          reject(error);
-        });
-        
-        form.pipe(req);
-      });
-    } else if (useBrevo) {
-      // Use Brevo API (300 emails/day = 9,000/month free)
-      const fromEmail = process.env.BREVO_FROM || process.env.SMTP_FROM || 'noreply@assistqr.com';
-      
-      // Extract email from "Name <email>" format or use as-is
-      let senderEmail = fromEmail;
-      let senderName = 'AssistQR';
-      if (fromEmail.includes('<') && fromEmail.includes('>')) {
-        const match = fromEmail.match(/<(.+)>/);
-        if (match) {
-          senderEmail = match[1];
-          senderName = fromEmail.split('<')[0].trim() || 'AssistQR';
-        }
-      }
-      
-      const brevoPayload = {
-        sender: {
-          name: senderName,
-          email: senderEmail
-        },
-        to: [{ email: contact.email }],
-        subject: mailOptions.subject,
-        htmlContent: mailOptions.html,
-        textContent: mailOptions.text
-      };
-
-      // Add attachments if any
-      if (attachments.length > 0) {
-        brevoPayload.attachment = attachments.map(att => ({
-          name: att.filename,
-          content: att.content.toString('base64')
-        }));
-      }
-
-      const brevoData = JSON.stringify(brevoPayload);
-      
-      // Verify API key exists
-      if (!process.env.BREVO_API_KEY) {
-        throw new Error('BREVO_API_KEY environment variable is not set');
-      }
-      
-      // Brevo API key should start with 'xkeysib-'
-      if (!process.env.BREVO_API_KEY.startsWith('xkeysib-')) {
-        console.warn('⚠️  Warning: Brevo API key should start with "xkeysib-". Make sure you copied the API key (not SMTP key) from Brevo dashboard.');
-      }
-      
-      const brevoOptions = {
-        hostname: 'api.brevo.com',
-        path: '/v3/smtp/email',
-        method: 'POST',
-        headers: {
-          'api-key': process.env.BREVO_API_KEY.trim(), // Trim whitespace
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(brevoData)
-        }
-      };
-
-      return new Promise((resolve, reject) => {
-        const req = https.request(brevoOptions, (res) => {
-          let data = '';
-          res.on('data', (chunk) => { data += chunk; });
-          res.on('end', () => {
-            if (res.statusCode >= 200 && res.statusCode < 300) {
-              const response = JSON.parse(data);
-              console.log(`✅ Email sent successfully to ${contact.email} via Brevo! Message ID: ${response.messageId}`);
-              resolve({ success: true, messageId: response.messageId });
-            } else {
-              let error;
-              try {
-                error = JSON.parse(data);
-              } catch (e) {
-                error = { message: data || `Brevo API error: ${res.statusCode}` };
-              }
-              console.error('❌ Brevo API error:', error);
-              reject(new Error(error.message || `Brevo API error: ${res.statusCode}`));
-            }
-          });
-        });
-
-        req.on('error', (error) => {
-          console.error('❌ Brevo request error:', error);
-          reject(error);
-        });
-
-        req.write(brevoData);
-        req.end();
-      });
-    } else if (useResend) {
-      // Use Resend API
-      // Use Resend's default domain (onboarding@resend.dev) which works without verification
-      // If user has RESEND_FROM set, use it; otherwise use the default verified domain
-      let fromEmail = process.env.RESEND_FROM;
-      if (!fromEmail || fromEmail.includes('yourdomain.com')) {
-        // Use Resend's default verified domain
-        fromEmail = 'AssistQR <onboarding@resend.dev>';
-      }
-      
-      const resendPayload = {
-        from: fromEmail,
-        to: [contact.email],
-        subject: mailOptions.subject,
-        html: mailOptions.html,
-        text: mailOptions.text
-      };
-
-      // Add attachments if any
-      if (attachments.length > 0) {
-        resendPayload.attachments = attachments.map(att => ({
-          filename: att.filename,
-          content: att.content.toString('base64'),
-          content_type: att.contentType
-        }));
-      }
-
-      const resendData = JSON.stringify(resendPayload);
-      const resendOptions = {
-        hostname: 'api.resend.com',
-        path: '/emails',
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(resendData)
-        }
-      };
-
-      return new Promise((resolve, reject) => {
-        const req = https.request(resendOptions, (res) => {
-          let data = '';
-          res.on('data', (chunk) => { data += chunk; });
-          res.on('end', () => {
-            if (res.statusCode >= 200 && res.statusCode < 300) {
-              const response = JSON.parse(data);
-              console.log(`✅ Email sent successfully to ${contact.email} via Resend! Message ID: ${response.id}`);
-              resolve({ success: true, messageId: response.id });
-            } else {
-              const error = JSON.parse(data);
-              console.error('❌ Resend API error:', error);
-              reject(new Error(error.message || `Resend API error: ${res.statusCode}`));
-            }
-          });
-        });
-
-        req.on('error', (error) => {
-          console.error('❌ Resend request error:', error);
-          reject(error);
-        });
-
-        req.write(resendData);
-        req.end();
-      });
-    } else {
-      // Use SendGrid or SMTP via nodemailer
-      const info = await transporter.sendMail(mailOptions);
-      console.log(`✅ Email sent successfully to ${contact.email}! Message ID: ${info.messageId}`);
-      return { success: true, messageId: info.messageId };
     }
+
+    // 2. Try Brevo SMTP (will likely fail on Render free tier)
+    if (emailConfig.brevoSmtp && brevoSmtpTransporter) {
+      try {
+        console.log('   🔄 Trying Brevo SMTP...');
+        const fromEmail = process.env.BREVO_FROM || process.env.BREVO_SMTP_USER;
+        const info = await brevoSmtpTransporter.sendMail({
+          from: fromEmail,
+          to: contact.email,
+          subject,
+          html,
+          text,
+          attachments
+        });
+        console.log(`✅ Email sent successfully via Brevo SMTP to ${contact.email}! Message ID: ${info.messageId}`);
+        return { success: true, messageId: info.messageId, provider: 'Brevo SMTP' };
+      } catch (error) {
+        console.warn(`   ⚠️  Brevo SMTP failed: ${error.message}`);
+      }
+    }
+
+    // 3. Try Mailgun API
+    if (emailConfig.mailgun) {
+      try {
+        console.log('   🔄 Trying Mailgun API...');
+        const result = await sendViaMailgunAPI(emailData);
+        console.log(`✅ Email sent successfully via Mailgun API to ${contact.email}! Message ID: ${result.messageId}`);
+        return { success: true, messageId: result.messageId, provider: 'Mailgun API' };
+      } catch (error) {
+        console.warn(`   ⚠️  Mailgun API failed: ${error.message}`);
+      }
+    }
+
+    // 4. Try Resend API
+    if (emailConfig.resend) {
+      try {
+        console.log('   🔄 Trying Resend API...');
+        const result = await sendViaResendAPI(emailData);
+        console.log(`✅ Email sent successfully via Resend API to ${contact.email}! Message ID: ${result.messageId}`);
+        return { success: true, messageId: result.messageId, provider: 'Resend API' };
+      } catch (error) {
+        console.warn(`   ⚠️  Resend API failed: ${error.message}`);
+      }
+    }
+
+    // 5. Try SendGrid API
+    if (emailConfig.sendgrid) {
+      try {
+        console.log('   🔄 Trying SendGrid API...');
+        const result = await sendViaSendGridAPI(emailData);
+        console.log(`✅ Email sent successfully via SendGrid API to ${contact.email}! Message ID: ${result.messageId}`);
+        return { success: true, messageId: result.messageId, provider: 'SendGrid API' };
+      } catch (error) {
+        console.warn(`   ⚠️  SendGrid API failed: ${error.message}`);
+      }
+    }
+
+    // 6. Try regular SMTP (will likely fail on Render free tier)
+    if (emailConfig.smtp && smtpTransporter) {
+      try {
+        console.log('   🔄 Trying SMTP...');
+        const from = process.env.SMTP_FROM_NAME 
+          ? `"${process.env.SMTP_FROM_NAME}" <${process.env.SMTP_FROM || process.env.SMTP_USER}>` 
+          : (process.env.SMTP_FROM || process.env.SMTP_USER);
+        const info = await smtpTransporter.sendMail({
+          from,
+          to: contact.email,
+          subject,
+          html,
+          text,
+          priority: 'high',
+          headers: {
+            'X-Priority': '1',
+            'X-MSMail-Priority': 'High',
+            'Importance': 'high',
+            'Priority': 'urgent'
+          },
+          attachments
+        });
+        console.log(`✅ Email sent successfully via SMTP to ${contact.email}! Message ID: ${info.messageId}`);
+        return { success: true, messageId: info.messageId, provider: 'SMTP' };
+      } catch (error) {
+        console.warn(`   ⚠️  SMTP failed: ${error.message}`);
+      }
+    }
+
+    // All services failed
+    const errorMsg = 'All email services failed. Please check your email service configuration.';
+    console.error(`❌ Failed to send email to ${contact.email}: ${errorMsg}`);
+    return { success: false, error: errorMsg };
+
   } catch (error) {
     console.error('❌ Error sending email to', contact.email, ':');
     console.error('   Error message:', error.message);
     console.error('   Error code:', error.code || 'N/A');
-    console.error('   Command:', error.command || 'N/A');
     
-    // Provide helpful error messages
     let errorMsg = error.message;
     if (error.code === 'ETIMEDOUT') {
-      errorMsg = 'SMTP connection timeout. Check your internet connection and Gmail settings. If using Gmail, verify the App Password is correct.';
-    } else if (error.code === 'EAUTH') {
-      errorMsg = 'SMTP authentication failed. Please check your email and App Password are correct.';
-    } else if (error.code === 'ECONNECTION') {
-      errorMsg = 'Could not connect to SMTP server. Check SMTP_HOST and port settings.';
+      errorMsg = 'Email service connection timeout. This may be due to network restrictions (e.g., Render free tier blocks SMTP).';
     }
     
     return { success: false, error: errorMsg, details: error.message };
@@ -582,4 +727,3 @@ AssistQR - Vehicle Safety System
 module.exports = {
   sendAccidentAlertEmail
 };
-
