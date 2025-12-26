@@ -1,7 +1,8 @@
 // Service Worker for AssistQR
 // Enables offline functionality for accident reporting form
+// Includes Background Sync API for automatic report syncing
 
-const CACHE_NAME = 'assistqr-v4';
+const CACHE_NAME = 'assistqr-v5';
 
 // Install: Cache resources when Service Worker is installed
 self.addEventListener('install', (event) => {
@@ -10,7 +11,9 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[Service Worker] Caching app shell');
       return cache.addAll([
-        '/css/style.css'
+        '/css/style.css',
+        '/js/offline-storage.js',
+        '/js/offline-sync.js'
       ]).catch(err => {
         console.log('[Service Worker] Cache addAll failed:', err);
       });
@@ -97,8 +100,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   
-  // Cache CSS files
-  if (url.pathname.startsWith('/css/')) {
+  // Cache CSS and JS files
+  if (url.pathname.startsWith('/css/') || url.pathname.startsWith('/js/')) {
     event.respondWith(
       caches.match(event.request).then((response) => {
         return response || fetch(event.request).then((response) => {
@@ -112,5 +115,40 @@ self.addEventListener('fetch', (event) => {
         });
       })
     );
+  }
+});
+
+// Background Sync: Handle syncing queued reports
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-reports') {
+    console.log('[SW] Background sync triggered: sync-reports');
+    event.waitUntil(syncQueuedReports());
+  }
+});
+
+// Sync queued reports from IndexedDB
+async function syncQueuedReports() {
+  try {
+    // Get all clients (open tabs)
+    const clients = await self.clients.matchAll();
+    
+    // Send message to clients to trigger sync
+    clients.forEach(client => {
+      client.postMessage({
+        type: 'SYNC_REPORTS',
+        timestamp: Date.now()
+      });
+    });
+    
+    console.log('[SW] ✅ Background sync message sent to clients');
+  } catch (error) {
+    console.error('[SW] ❌ Error in background sync:', error);
+  }
+}
+
+// Listen for messages from clients
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
   }
 });

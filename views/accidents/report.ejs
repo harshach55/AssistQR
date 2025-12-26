@@ -6,6 +6,9 @@
     <title>Emergency Report - AssistQR</title>
     <link rel="manifest" href="/manifest.json">
     <link rel="stylesheet" href="/css/style.css">
+    <!-- Offline Storage and Sync -->
+    <script src="/js/offline-storage.js"></script>
+    <script src="/js/offline-sync.js"></script>
     <% if (googleMapsApiKey) { %>
     <script src="https://maps.googleapis.com/maps/api/js?key=<%= googleMapsApiKey %>&libraries=places" async defer></script>
     <% } %>
@@ -51,6 +54,21 @@
     </div>
 
     <div class="container-sm">
+        <!-- Offline Status Indicator -->
+        <div id="offline-status" class="card" style="margin-bottom: 1rem; display: none; background-color: #fff3cd; border: 1px solid #ffc107;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span style="font-size: 1.2rem;">📴</span>
+                <div style="flex: 1;">
+                    <strong>Offline Mode</strong>
+                    <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem;">Your report will be saved and synced when connection is restored.</p>
+                </div>
+                <span id="pending-count" style="background-color: #dc3545; color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: bold; display: none;">0</span>
+            </div>
+        </div>
+
+        <!-- Sync Status -->
+        <div id="sync-status" class="sync-status" style="margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; display: none;"></div>
+
         <div class="card">
             <div style="margin-bottom: 1.5rem; padding: 1rem; background-color: var(--bg-light); border-radius: 6px;">
                 <h3 style="margin-bottom: 0.5rem;">Vehicle Information</h3>
@@ -149,7 +167,7 @@
         </div>
 
         <div class="card" style="background-color: #fff3cd; border: 1px solid #ffc107;">
-            <p style="margin: 0;"><strong>Note:</strong> By submitting this report, emergency contacts for this vehicle will be immediately notified via email and SMS with the provided information. This form works offline - if you don't have internet, you can send an SMS instead.</p>
+            <p style="margin: 0;"><strong>Note:</strong> By submitting this report, emergency contacts for this vehicle will be immediately notified via email and SMS with the provided information. This form works completely offline - reports are saved locally and automatically synced when connection is restored.</p>
         </div>
     </div>
 
@@ -482,6 +500,24 @@
             });
         });
 
+        // Initialize Offline Storage
+        let offlineStorageReady = false;
+        window.addEventListener('load', async () => {
+            try {
+                await window.offlineStorage.init();
+                offlineStorageReady = true;
+                console.log('✅ Offline storage initialized');
+                
+                // Update pending count
+                await window.offlineSync.updatePendingCount();
+                
+                // Initialize sync
+                await window.offlineSync.initSync();
+            } catch (error) {
+                console.error('❌ Failed to initialize offline storage:', error);
+            }
+        });
+
         // Service Worker Registration for Offline Support
         // Note: Service Workers require HTTPS on mobile (except localhost)
         if ('serviceWorker' in navigator) {
@@ -493,6 +529,15 @@
                     navigator.serviceWorker.register('/sw.js')
                         .then((registration) => {
                             console.log('✅ Service Worker registered:', registration.scope);
+                            
+                            // Listen for service worker messages
+                            navigator.serviceWorker.addEventListener('message', (event) => {
+                                if (event.data && event.data.type === 'SYNC_REPORTS') {
+                                    console.log('🔄 Service Worker requested sync');
+                                    window.offlineSync.syncAllPendingReports();
+                                }
+                            });
+                            
                             // Check for updates
                             registration.addEventListener('updatefound', () => {
                                 console.log('🔄 Service Worker update found');
@@ -509,6 +554,31 @@
         } else {
             console.log('⚠️ Service Worker not supported in this browser');
         }
+
+        // Update offline status indicator
+        function updateOfflineStatus() {
+            const offlineStatus = document.getElementById('offline-status');
+            const isOnline = window.offlineStorage.isOnline();
+            
+            if (offlineStatus) {
+                if (!isOnline) {
+                    offlineStatus.style.display = 'block';
+                } else {
+                    offlineStatus.style.display = 'none';
+                }
+            }
+        }
+
+        // Listen for online/offline events
+        window.offlineStorage.onOnlineStatusChange((isOnline) => {
+            updateOfflineStatus();
+            if (isOnline) {
+                window.offlineSync.syncAllPendingReports();
+            }
+        });
+
+        // Initial status check
+        updateOfflineStatus();
 
         // Connectivity Detection
         function checkConnectivity() {
@@ -605,12 +675,78 @@
             
             // Check connectivity
             const { hasInternet, hasCellular } = checkConnectivity();
+            const isOnline = window.offlineStorage && window.offlineStorage.isOnline();
             
-            if (!hasInternet) {
+            if (!hasInternet || !isOnline) {
                 e.preventDefault();
                 
+                // Try to queue the report offline
+                if (offlineStorageReady) {
+                    try {
+                        submitBtn.textContent = 'Saving Offline...';
+                        
+                        // Get form data
+                        const formData = new FormData(form);
+                        const qrToken = formData.get('qrToken');
+                        const latitude = formData.get('latitude');
+                        const longitude = formData.get('longitude');
+                        const manualLocation = formData.get('manualLocation');
+                        const helperNote = formData.get('helperNote');
+                        const imageFiles = formData.getAll('images');
+                        
+                        // Queue report
+                        const reportId = await window.offlineStorage.queueReport({
+                            qrToken: qrToken,
+                            latitude: latitude || null,
+                            longitude: longitude || null,
+                            manualLocation: manualLocation || null,
+                            helperNote: helperNote || null
+                        });
+                        
+                        // Store images
+                        for (const file of imageFiles) {
+                            if (file && file.size > 0) {
+                                await window.offlineStorage.storeImage(file, reportId);
+                            }
+                        }
+                        
+                        // Update UI
+                        submitBtn.textContent = 'Saved Offline ✓';
+                        locationStatus.className = 'location-status success';
+                        locationStatus.textContent = '✅ Report saved offline! It will be sent automatically when connection is restored.';
+                        
+                        // Update pending count
+                        await window.offlineSync.updatePendingCount();
+                        
+                        // Register background sync
+                        window.offlineSync.registerBackgroundSync();
+                        
+                        // Reset form after 2 seconds
+                        setTimeout(() => {
+                            form.reset();
+                            imagePreviewContainer.innerHTML = '';
+                            latitudeInput.value = '';
+                            longitudeInput.value = '';
+                            selectedLocationDisplay.textContent = '';
+                            locationStatus.className = 'location-status info';
+                            locationStatus.textContent = 'No location selected. Click "Use Current Location" or search for a location.';
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = 'Submit Emergency Report';
+                        }, 2000);
+                        
+                        return;
+                    } catch (error) {
+                        console.error('❌ Error queueing report:', error);
+                        submitBtn.textContent = 'Error Saving';
+                        locationStatus.className = 'location-status error';
+                        locationStatus.textContent = '⚠️ Error saving report offline. Trying SMS fallback...';
+                        
+                        // Fall through to SMS fallback
+                    }
+                }
+                
+                // SMS fallback if offline storage failed or not available
                 if (hasCellular) {
-                    // Use SMS fallback
                     submitBtn.textContent = 'Opening SMS...';
                     sendViaSMS();
                     
@@ -621,10 +757,9 @@
                         submitBtn.textContent = 'SMS Sent';
                     }, 500);
                 } else {
-                    // No connectivity at all - store for later
                     submitBtn.textContent = 'No Connection';
                     locationStatus.className = 'location-status error';
-                    locationStatus.textContent = '⚠️ No internet or cellular connection. Please connect to the internet to submit the report.';
+                    locationStatus.textContent = '⚠️ No internet or cellular connection. Report could not be saved.';
                     submitBtn.disabled = false;
                 }
                 return;
