@@ -90,7 +90,7 @@
                         <strong>📴 Offline Mode:</strong> GPS and location search are not available. Please enter location details manually below.
                     </div>
                     
-                    <!-- Location Search -->
+                    <!-- Location Search (disabled when offline) -->
                     <div style="margin-bottom: 1rem; position: relative;">
                         <input 
                             type="text" 
@@ -101,6 +101,31 @@
                         >
                         <div id="location-suggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 1000; background: white; border: 1px solid #ddd; border-radius: 6px; max-height: 200px; overflow-y: auto; margin-top: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
                     </div>
+                    <script>
+                        // Disable location search when offline
+                        function updateLocationSearchAvailability() {
+                            const locationSearchInput = document.getElementById('location-search');
+                            const isOnline = window.offlineStorage && window.offlineStorage.isOnline ? window.offlineStorage.isOnline() : navigator.onLine;
+                            
+                            if (locationSearchInput) {
+                                if (!isOnline) {
+                                    locationSearchInput.disabled = true;
+                                    locationSearchInput.placeholder = 'Location search unavailable offline. Please enter location manually below.';
+                                    locationSearchInput.style.backgroundColor = '#f5f5f5';
+                                } else {
+                                    locationSearchInput.disabled = false;
+                                    locationSearchInput.placeholder = "Search for location or address (e.g., 'Main Street, New York')...";
+                                    locationSearchInput.style.backgroundColor = '';
+                                }
+                            }
+                        }
+                        
+                        // Update on load and when online status changes
+                        window.addEventListener('load', updateLocationSearchAvailability);
+                        if (window.offlineStorage) {
+                            window.offlineStorage.onOnlineStatusChange(updateLocationSearchAvailability);
+                        }
+                    </script>
                     
                     <div style="display: flex; gap: 0.5rem;">
                         <button type="button" id="get-location-btn" class="btn btn-primary" style="flex: 1;">
@@ -347,6 +372,15 @@
             locationSearchInput.addEventListener('input', (e) => {
                 const query = e.target.value.trim();
                 
+                // Check if offline - don't make API calls when offline
+                const isOnline = window.offlineStorage && window.offlineStorage.isOnline ? window.offlineStorage.isOnline() : navigator.onLine;
+                
+                if (!isOnline) {
+                    // Offline: hide suggestions, let user type manually
+                    locationSuggestions.style.display = 'none';
+                    return;
+                }
+                
                 clearTimeout(searchTimeout);
                 
                 if (query.length < 3) {
@@ -392,8 +426,11 @@
                         locationSuggestions.style.display = 'block';
                     } catch (error) {
                         console.error('Location search error:', error);
-                        locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--danger-color);">Error searching locations. Please try again.</div>';
-                        locationSuggestions.style.display = 'block';
+                        // Only show error if online (offline errors are expected)
+                        if (isOnline) {
+                            locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--danger-color);">Error searching locations. Please try again.</div>';
+                            locationSuggestions.style.display = 'block';
+                        }
                     }
                 }, 500);
             });
@@ -407,6 +444,15 @@
             locationSearchInput.addEventListener('input', (e) => {
                 const query = e.target.value.trim();
                 
+                // Check if offline - don't make API calls when offline
+                const isOnline = window.offlineStorage && window.offlineStorage.isOnline ? window.offlineStorage.isOnline() : navigator.onLine;
+                
+                if (!isOnline) {
+                    // Offline: hide suggestions, let user type manually
+                    locationSuggestions.style.display = 'none';
+                    return;
+                }
+                
                 clearTimeout(searchTimeout);
                 
                 if (query.length < 3) {
@@ -452,8 +498,11 @@
                         locationSuggestions.style.display = 'block';
                     } catch (error) {
                         console.error('Location search error:', error);
-                        locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--danger-color);">Error searching locations. Please try again.</div>';
-                        locationSuggestions.style.display = 'block';
+                        // Only show error if online (offline errors are expected)
+                        if (isOnline) {
+                            locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--danger-color);">Error searching locations. Please try again.</div>';
+                            locationSuggestions.style.display = 'block';
+                        }
                     }
                 }, 500);
             });
