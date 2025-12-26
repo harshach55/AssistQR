@@ -69,8 +69,10 @@ async function queueReport(reportData) {
 
     return new Promise((resolve, reject) => {
       request.onsuccess = () => {
-        console.log('✅ Report queued:', request.result);
-        resolve(request.result);
+        const reportId = request.result;
+        console.log('✅ Report queued with ID:', reportId);
+        console.log('📝 Report data:', JSON.stringify(reportData, null, 2));
+        resolve(reportId);
       };
       request.onerror = () => {
         console.error('❌ Error queueing report:', request.error);

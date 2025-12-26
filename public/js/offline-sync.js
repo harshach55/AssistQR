@@ -1,8 +1,10 @@
 // Offline Sync Layer for AssistQR
 // Handles syncing queued reports when connection is restored
 
-// Prevent duplicate syncs
+// Prevent duplicate syncs - use timestamp to track last sync
 let isSyncing = false;
+let lastSyncTime = 0;
+const SYNC_COOLDOWN = 5000; // 5 seconds cooldown between syncs
 
 // Submit a queued report to the server
 async function syncReport(report) {
@@ -67,9 +69,15 @@ async function syncReport(report) {
 
 // Sync all pending reports
 async function syncAllPendingReports() {
-  // Prevent duplicate syncs
+  // Prevent duplicate syncs - check both lock and cooldown
+  const now = Date.now();
   if (isSyncing) {
     console.log('🔄 Sync already in progress, skipping...');
+    return { synced: 0, failed: 0 };
+  }
+  
+  if (now - lastSyncTime < SYNC_COOLDOWN) {
+    console.log(`🔄 Sync cooldown active (${Math.round((SYNC_COOLDOWN - (now - lastSyncTime)) / 1000)}s remaining), skipping...`);
     return { synced: 0, failed: 0 };
   }
 
@@ -79,6 +87,7 @@ async function syncAllPendingReports() {
   }
 
   isSyncing = true;
+  lastSyncTime = now;
   console.log('🔄 Starting sync...');
 
   try {
@@ -167,14 +176,11 @@ async function updatePendingCount() {
   }
 }
 
-// Initialize sync on page load if online
+// Initialize sync on page load if online (DISABLED - only sync when coming online)
 async function initSync() {
-  if (window.offlineStorage && window.offlineStorage.isOnline()) {
-    // Small delay to ensure page is loaded
-    setTimeout(async () => {
-      await syncAllPendingReports();
-    }, 2000);
-  }
+  // Don't sync on page load - only sync when connection is restored
+  // This prevents duplicate syncs when page is refreshed
+  console.log('⏭️  initSync called but disabled to prevent duplicates');
 }
 
 // Register background sync

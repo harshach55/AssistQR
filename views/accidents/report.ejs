@@ -807,19 +807,28 @@
                         
                         // Store images
                         if (imageFiles && imageFiles.length > 0) {
-                            console.log(`📷 Storing ${imageFiles.length} image(s)...`);
+                            console.log(`📷 Storing ${imageFiles.length} image(s) for report ${reportId}...`);
+                            let storedCount = 0;
                             for (const file of imageFiles) {
                                 if (file && file.size > 0) {
                                     try {
-                                        await window.offlineStorage.storeImage(file, reportId);
-                                        console.log('✅ Image stored:', file.name);
+                                        const imageId = await window.offlineStorage.storeImage(file, reportId);
+                                        console.log(`✅ Image stored with ID ${imageId} for report ${reportId}: ${file.name} (${file.size} bytes)`);
+                                        storedCount++;
                                     } catch (imgError) {
                                         console.error('❌ Error storing image:', imgError);
                                     }
+                                } else {
+                                    console.warn('⚠️ Skipping invalid image file:', file);
                                 }
                             }
+                            console.log(`✅ Stored ${storedCount} of ${imageFiles.length} image(s) for report ${reportId}`);
+                            
+                            // Verify images were stored
+                            const verifyImages = await window.offlineStorage.getReportImages(reportId);
+                            console.log(`🔍 Verification: Found ${verifyImages.length} image(s) stored for report ${reportId}`);
                         } else {
-                            console.log('⚠️ No images to store');
+                            console.log('⚠️ No images to store for report', reportId);
                         }
                         
                         // Update UI
