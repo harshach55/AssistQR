@@ -769,13 +769,15 @@
                 
                 // Ensure offline storage is ready (try to initialize if not ready)
                 if (!offlineStorageReady) {
+                    console.log('🔄 Initializing offline storage...');
                     await initOfflineStorage();
                 }
                 
                 // Try to queue the report offline
-                if (window.offlineStorage && offlineStorageReady) {
+                if (window.offlineStorage) {
                     try {
                         submitBtn.textContent = 'Saving Offline...';
+                        console.log('💾 Attempting to save report offline...');
                         
                         // Get form data
                         const formData = new FormData(form);
@@ -786,6 +788,8 @@
                         const helperNote = formData.get('helperNote');
                         const imageFiles = formData.getAll('images');
                         
+                        console.log('📝 Report data:', { qrToken, latitude, longitude, manualLocation, helperNote, imageCount: imageFiles.length });
+                        
                         // Queue report
                         const reportId = await window.offlineStorage.queueReport({
                             qrToken: qrToken,
@@ -795,11 +799,23 @@
                             helperNote: helperNote || null
                         });
                         
+                        console.log('✅ Report queued with ID:', reportId);
+                        
                         // Store images
-                        for (const file of imageFiles) {
-                            if (file && file.size > 0) {
-                                await window.offlineStorage.storeImage(file, reportId);
+                        if (imageFiles && imageFiles.length > 0) {
+                            console.log(`📷 Storing ${imageFiles.length} image(s)...`);
+                            for (const file of imageFiles) {
+                                if (file && file.size > 0) {
+                                    try {
+                                        await window.offlineStorage.storeImage(file, reportId);
+                                        console.log('✅ Image stored:', file.name);
+                                    } catch (imgError) {
+                                        console.error('❌ Error storing image:', imgError);
+                                    }
+                                }
                             }
+                        } else {
+                            console.log('⚠️ No images to store');
                         }
                         
                         // Update UI
@@ -808,10 +824,10 @@
                         locationStatus.textContent = '✅ Report saved offline! It will be sent automatically when connection is restored.';
                         
                         // Update pending count
-                        await window.offlineSync.updatePendingCount();
-                        
-                        // Register background sync
-                        window.offlineSync.registerBackgroundSync();
+                        if (window.offlineSync) {
+                            await window.offlineSync.updatePendingCount();
+                            window.offlineSync.registerBackgroundSync();
+                        }
                         
                         // Reset form after 2 seconds
                         setTimeout(() => {
@@ -829,12 +845,15 @@
                         return;
                     } catch (error) {
                         console.error('❌ Error queueing report:', error);
+                        console.error('Error details:', error.stack);
                         submitBtn.textContent = 'Error Saving';
                         locationStatus.className = 'location-status error';
-                        locationStatus.textContent = '⚠️ Error saving report offline. Trying SMS fallback...';
+                        locationStatus.textContent = '⚠️ Error saving report offline: ' + error.message + '. Trying SMS fallback...';
                         
                         // Fall through to SMS fallback
                     }
+                } else {
+                    console.error('❌ window.offlineStorage not available');
                 }
                 
                 // SMS fallback if offline storage failed or not available

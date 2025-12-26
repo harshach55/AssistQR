@@ -164,11 +164,26 @@ async function getReportImages(reportId) {
     return new Promise((resolve, reject) => {
       request.onsuccess = () => {
         const images = request.result || [];
-        // Convert blobs back to File objects
-        const files = images.map(img => {
-          const blob = new Blob([img.blob], { type: img.type });
-          return new File([blob], img.filename, { type: img.type });
-        });
+        console.log(`📷 Retrieved ${images.length} image(s) from storage for report ${reportId}`);
+        
+        // Convert ArrayBuffers back to File objects
+        const files = images.map((img, index) => {
+          try {
+            // img.blob is an ArrayBuffer, convert to Blob then File
+            const blob = new Blob([img.blob], { type: img.type || 'image/jpeg' });
+            const file = new File([blob], img.filename || `image_${index + 1}.jpg`, { 
+              type: img.type || 'image/jpeg',
+              lastModified: img.timestamp || Date.now()
+            });
+            console.log(`✅ Converted image ${index + 1}: ${file.name} (${file.size} bytes)`);
+            return file;
+          } catch (error) {
+            console.error(`❌ Error converting image ${index + 1}:`, error);
+            return null;
+          }
+        }).filter(file => file !== null);
+        
+        console.log(`✅ Returning ${files.length} valid image file(s)`);
         resolve(files);
       };
       request.onerror = () => {
