@@ -1,10 +1,61 @@
 // Offline Sync Layer for AssistQR
 // Handles syncing queued reports when connection is restored
 
-// Prevent duplicate syncs - use timestamp to track last sync
+// Prevent duplicate syncs - use localStorage to persist across page loads
 let isSyncing = false;
-let lastSyncTime = 0;
-const SYNC_COOLDOWN = 5000; // 5 seconds cooldown between syncs
+const SYNC_COOLDOWN = 10000; // 10 seconds cooldown between syncs
+const SYNC_LOCK_KEY = 'assistqr_sync_lock';
+const SYNC_LOCK_TIMEOUT = 30000; // 30 seconds max lock time
+
+function getLastSyncTime() {
+  try {
+    const stored = localStorage.getItem('assistqr_last_sync');
+    return stored ? parseInt(stored, 10) : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function setLastSyncTime() {
+  try {
+    localStorage.setItem('assistqr_last_sync', Date.now().toString());
+  } catch (e) {
+    // Ignore localStorage errors
+  }
+}
+
+function getSyncLock() {
+  try {
+    const lock = localStorage.getItem(SYNC_LOCK_KEY);
+    if (!lock) return false;
+    const lockTime = parseInt(lock, 10);
+    const now = Date.now();
+    // If lock is older than timeout, consider it stale
+    if (now - lockTime > SYNC_LOCK_TIMEOUT) {
+      localStorage.removeItem(SYNC_LOCK_KEY);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function setSyncLock() {
+  try {
+    localStorage.setItem(SYNC_LOCK_KEY, Date.now().toString());
+  } catch (e) {
+    // Ignore localStorage errors
+  }
+}
+
+function clearSyncLock() {
+  try {
+    localStorage.removeItem(SYNC_LOCK_KEY);
+  } catch (e) {
+    // Ignore localStorage errors
+  }
+}
 
 // Submit a queued report to the server
 async function syncReport(report) {
@@ -69,15 +120,22 @@ async function syncReport(report) {
 
 // Sync all pending reports
 async function syncAllPendingReports() {
-  // Prevent duplicate syncs - check both lock and cooldown
+  // Prevent duplicate syncs - check both in-memory lock and localStorage lock
   const now = Date.now();
   if (isSyncing) {
-    console.log('🔄 Sync already in progress, skipping...');
+    console.log('🔄 Sync already in progress (in-memory lock), skipping...');
     return { synced: 0, failed: 0 };
   }
   
-  if (now - lastSyncTime < SYNC_COOLDOWN) {
-    console.log(`🔄 Sync cooldown active (${Math.round((SYNC_COOLDOWN - (now - lastSyncTime)) / 1000)}s remaining), skipping...`);
+  if (getSyncLock()) {
+    console.log('🔄 Sync already in progress (localStorage lock), skipping...');
+    return { synced: 0, failed: 0 };
+  }
+  
+  const lastSync = getLastSyncTime();
+  if (now - lastSync < SYNC_COOLDOWN) {
+    const remaining = Math.round((SYNC_COOLDOWN - (now - lastSync)) / 1000);
+    console.log(`🔄 Sync cooldown active (${remaining}s remaining), skipping...`);
     return { synced: 0, failed: 0 };
   }
 
@@ -87,8 +145,9 @@ async function syncAllPendingReports() {
   }
 
   isSyncing = true;
-  lastSyncTime = now;
-  console.log('🔄 Starting sync...');
+  setSyncLock();
+  setLastSyncTime();
+  console.log('🔄 Starting sync (locked)...');
 
   try {
     const pendingReports = await window.offlineStorage.getPendingReports();
@@ -141,6 +200,8 @@ async function syncAllPendingReports() {
     return { synced, failed };
   } finally {
     isSyncing = false;
+    clearSyncLock();
+    console.log('🔓 Sync lock released');
   }
 }
 
