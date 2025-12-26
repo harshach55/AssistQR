@@ -169,6 +169,8 @@ async function sendViaBrevoAPI({ to, subject, html, text, attachments = [] }) {
       ? extractName(process.env.BREVO_FROM) || 'AssistQR'
       : 'AssistQR';
 
+    console.log(`   📤 Brevo API - From: ${fromName} <${fromEmail}>, To: ${to}`);
+
     const payload = {
       sender: {
         name: fromName,
@@ -207,12 +209,15 @@ async function sendViaBrevoAPI({ to, subject, html, text, attachments = [] }) {
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           const response = JSON.parse(data);
-          resolve({ success: true, messageId: response.messageId || 'unknown' });
+          console.log(`   ✅ Brevo API response:`, JSON.stringify(response, null, 2));
+          resolve({ success: true, messageId: response.messageId || 'unknown', response: response });
         } else {
           try {
             const error = JSON.parse(data);
+            console.error(`   ❌ Brevo API error response:`, JSON.stringify(error, null, 2));
             reject(new Error(error.message || `Brevo API error: ${data}`));
           } catch (e) {
+            console.error(`   ❌ Brevo API error (non-JSON):`, data);
             reject(new Error(`Brevo API error: ${data}`));
           }
         }
@@ -613,7 +618,13 @@ AssistQR - Vehicle Safety System
       try {
         console.log('   🔄 Trying Brevo API...');
         const result = await sendViaBrevoAPI(emailData);
-        console.log(`✅ Email sent successfully via Brevo API to ${contact.email}! Message ID: ${result.messageId}`);
+        const fromEmail = process.env.BREVO_FROM 
+          ? extractEmail(process.env.BREVO_FROM)
+          : 'noreply@assistqr.com';
+        console.log(`✅ Email sent successfully via Brevo API to ${contact.email}!`);
+        console.log(`   📧 From: ${fromEmail}`);
+        console.log(`   📬 Message ID: ${result.messageId}`);
+        console.log(`   ⚠️  Note: If email not received, check spam folder. Sender email must be verified in Brevo dashboard.`);
         return { success: true, messageId: result.messageId, provider: 'Brevo API' };
       } catch (error) {
         console.warn(`   ⚠️  Brevo API failed: ${error.message}`);
