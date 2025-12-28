@@ -59,8 +59,8 @@
             <div style="display: flex; align-items: center; gap: 0.5rem;">
                 <span style="font-size: 1.2rem;">📴</span>
                 <div style="flex: 1;">
-                    <strong>Offline Mode</strong>
-                    <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem;">Your report will be saved and synced when connection is restored.</p>
+                    <strong>No Internet Connection</strong>
+                    <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem;">Will try cellular network first. If that fails, report will be saved and synced when connection is restored.</p>
                 </div>
                 <span id="pending-count" style="background-color: #dc3545; color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: bold; display: none;">0</span>
             </div>
@@ -733,11 +733,12 @@
             const hasCoordinates = latitudeInput.value && longitudeInput.value;
             const hasManualLocation = document.getElementById('manualLocation').value.trim();
             
-            // Check if we're offline
+            // Check if we're online (WiFi/internet)
             const isOnline = window.offlineStorage && window.offlineStorage.isOnline ? window.offlineStorage.isOnline() : navigator.onLine;
             
-            // When offline, only require manual location (GPS/search won't work)
+            // Location validation
             if (!isOnline) {
+                // When offline, only require manual location (GPS/search won't work)
                 if (!hasManualLocation) {
                     e.preventDefault();
                     locationStatus.className = 'location-status error';
@@ -757,42 +758,95 @@
             }
 
             const submitBtn = form.querySelector('button[type="submit"]');
+            
+            // STEP 1: If online, let form submit normally (browser handles it)
+            if (isOnline) {
+                // Normal form submission - browser will handle redirect to thank you page
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Sending to Server...';
+                console.log('🚀 Sending report to server (online mode - normal form submission)...');
+                return; // Let form submit normally
+            }
+            
+            // STEP 2: If offline, prevent default and try cellular network first
+            e.preventDefault();
             submitBtn.disabled = true;
             
-            // Check connectivity
-            const { hasInternet, hasCellular } = checkConnectivity();
+            // Get form data
+            const formData = new FormData(form);
             
-            if (!hasInternet || !isOnline) {
-                e.preventDefault();
+            // STEP 2: If offline, try to send via cellular network first
+            console.log('📴 Offline detected - attempting to send via cellular network...');
+            submitBtn.textContent = 'Trying Cellular Network...';
+            
+            try {
+                // Try to send to server (will use cellular if available)
+                const response = await fetch('/accidents/report', {
+                    method: 'POST',
+                    body: formData,
+                    // Add timeout to detect network failures quickly
+                    signal: AbortSignal.timeout(30000) // 30 second timeout
+                });
                 
-                // Ensure offline storage is ready (try to initialize if not ready)
+                if (response.ok) {
+                    // SUCCESS: Cellular network worked!
+                    console.log('✅ Report sent successfully via cellular network');
+                    
+                    // Show success message briefly, then redirect
+                    submitBtn.textContent = 'Report Sent ✓';
+                    locationStatus.className = 'location-status success';
+                    locationStatus.textContent = '✅ Report sent via cellular network! Emergency contacts have been notified. Redirecting...';
+                    
+                    // Redirect to thank you page
+                    setTimeout(() => {
+                        window.location.href = '/accidents/report?success=true&redirect=thankyou';
+                    }, 1500);
+                    return; // Success - exit
+                } else {
+                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                }
+            } catch (error) {
+                // STEP 3: Cellular attempt failed - store offline and sync later
+                console.warn('⚠️ Cellular network failed, storing offline for later sync:', error);
+                
+                // Check if it's a network error (not a validation error)
+                const isNetworkError = error.name === 'AbortError' || 
+                                      error.name === 'TypeError' || 
+                                      error.message.includes('Failed to fetch') ||
+                                      error.message.includes('network');
+                
+                if (!isNetworkError) {
+                    // Not a network error - show error to user
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit Emergency Report';
+                    locationStatus.className = 'location-status error';
+                    locationStatus.textContent = `⚠️ Error: ${error.message}`;
+                    return;
+                }
+                
+                // Network error - store offline
+                submitBtn.textContent = 'Saving Offline...';
+                
+                // Ensure offline storage is ready
                 if (!offlineStorageReady) {
                     console.log('🔄 Initializing offline storage...');
                     await initOfflineStorage();
                 }
                 
-                // Try to queue the report offline
                 if (window.offlineStorage) {
                     try {
-                        submitBtn.textContent = 'Saving Offline...';
-                        console.log('💾 Attempting to save report offline...');
-                        
-                        // Get form data
-                        const formData = new FormData(form);
+                        // Extract form data
                         const qrToken = formData.get('qrToken');
                         const latitude = formData.get('latitude');
                         const longitude = formData.get('longitude');
                         const manualLocation = formData.get('manualLocation');
                         const helperNote = formData.get('helperNote');
-                        // Get image files - filter out empty files
                         const imageFiles = Array.from(formData.getAll('images')).filter(file => 
                             file && file instanceof File && file.size > 0
                         );
                         
+                        console.log('💾 Storing report offline for retry when connection is restored...');
                         console.log('📝 Report data:', { qrToken, latitude, longitude, manualLocation, helperNote, imageCount: imageFiles.length });
-                        imageFiles.forEach((file, index) => {
-                            console.log(`  Image ${index + 1}: ${file.name}, ${file.size} bytes, type: ${file.type}`);
-                        });
                         
                         // Queue report
                         const reportId = await window.offlineStorage.queueReport({
@@ -803,11 +857,11 @@
                             helperNote: helperNote || null
                         });
                         
-                        console.log('✅ Report queued with ID:', reportId);
+                        console.log('✅ Report queued offline with ID:', reportId);
                         
                         // Store images
                         if (imageFiles && imageFiles.length > 0) {
-                            console.log(`📷 Storing ${imageFiles.length} image(s) for report ${reportId}...`);
+                            console.log(`📷 Storing ${imageFiles.length} image(s) offline...`);
                             let storedCount = 0;
                             for (const file of imageFiles) {
                                 if (file && file.size > 0) {
@@ -836,7 +890,7 @@
                         locationStatus.className = 'location-status success';
                         locationStatus.textContent = '✅ Report saved offline! It will be sent automatically when connection is restored.';
                         
-                        // Update pending count
+                        // Update pending count and register background sync
                         if (window.offlineSync) {
                             await window.offlineSync.updatePendingCount();
                             window.offlineSync.registerBackgroundSync();
@@ -854,9 +908,22 @@
                             submitBtn.disabled = false;
                             submitBtn.textContent = 'Submit Emergency Report';
                         }, 2000);
-                        
-                        return;
-                    } catch (error) {
+                    } catch (offlineError) {
+                        console.error('❌ Error storing offline:', offlineError);
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Submit Emergency Report';
+                        locationStatus.className = 'location-status error';
+                        locationStatus.textContent = '⚠️ Failed to save offline. Please try again when you have internet connection.';
+                    }
+                } else {
+                    // Offline storage not available
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Submit Emergency Report';
+                    locationStatus.className = 'location-status error';
+                    locationStatus.textContent = '⚠️ No internet connection and offline storage not available. Please connect to internet to submit.';
+                }
+            }
+        });
                         console.error('❌ Error queueing report:', error);
                         console.error('Error details:', error.stack);
                         submitBtn.textContent = 'Error Saving';
