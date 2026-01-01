@@ -83,11 +83,12 @@
                 <!-- Location -->
                 <div class="form-group">
                     <label class="form-label">Location *</label>
-                    <div id="location-status" class="location-status info">
+                    <div id="location-status" class="location-status info" style="display: none;">
                         Requesting location access...
                     </div>
                     <div id="offline-location-note" style="display: none; padding: 0.75rem; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; margin-bottom: 1rem; font-size: 0.875rem;">
-                        <strong>📴 Offline Mode:</strong> GPS and location search are not available. Please enter location details manually below.
+                        <strong>📴 Offline Mode:</strong> GPS and location search are not available. Please enter location details manually below.<br>
+                        <strong>📱 Cellular SMS:</strong> If you have cellular network (5G/4G/3G/2G), the report will be sent via SMS automatically.
                     </div>
                     
                     <!-- Location Search (disabled when offline) -->
@@ -96,7 +97,7 @@
                             type="text" 
                             id="location-search" 
                             class="form-input" 
-                            placeholder="Search for location or address (e.g., 'Main Street, New York')..."
+                            placeholder="Type to search for location or address..."
                             autocomplete="off"
                         >
                         <div id="location-suggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 1000; background: white; border: 1px solid #ddd; border-radius: 6px; max-height: 200px; overflow-y: auto; margin-top: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
@@ -216,11 +217,13 @@
         // Function to request location permission and get current location
         function requestLocation() {
             if (!navigator.geolocation) {
+                locationStatus.style.display = 'block';
                 locationStatus.className = 'location-status error';
                 locationStatus.textContent = 'Geolocation is not supported by your browser. Please search for a location instead.';
                 return;
             }
 
+            locationStatus.style.display = 'block';
             locationStatus.className = 'location-status info';
             locationStatus.textContent = 'Requesting location permission...';
             getLocationBtn.disabled = true;
@@ -268,9 +271,19 @@
             );
         }
 
-        // Auto-request location on page load
+        // Auto-request location on page load (but don't block the UI)
         window.addEventListener('load', () => {
-            requestLocation();
+            // Request location in background, but don't show status immediately
+            // User can still type in search field
+            // Only show status if we're actually requesting
+            setTimeout(() => {
+                if (navigator.geolocation) {
+                    requestLocation();
+                } else {
+                    // Geolocation not supported - hide status, user can use search
+                    locationStatus.style.display = 'none';
+                }
+            }, 500);
         });
 
         // Manual location button click
@@ -282,9 +295,11 @@
             longitudeInput.value = '';
             locationSearchInput.value = '';
             selectedLocationDisplay.textContent = '';
+            locationStatus.style.display = 'none';
             locationStatus.className = 'location-status info';
             locationStatus.textContent = 'No location selected. Click "Use Current Location" or search for a location.';
             getLocationBtn.textContent = '📍 Use Current Location';
+            locationSuggestions.style.display = 'none';
         });
 
         // Set location coordinates
@@ -300,6 +315,7 @@
                 selectedLocationDisplay.style.color = 'var(--success-color)';
             }
             
+            locationStatus.style.display = 'block';
             locationStatus.className = 'location-status success';
             locationStatus.textContent = '✓ Location set successfully!';
         }
@@ -307,46 +323,138 @@
         // Google Maps Places Autocomplete initialization
         let autocomplete = null;
         let placesService = null;
+        let searchInitialized = false;
+        
+        // Fallback to OpenStreetMap search (always available)
+        function initOpenStreetMapSearch() {
+            if (searchInitialized) return; // Prevent duplicate listeners
+            
+            locationSearchInput.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+                
+                // Check if offline - don't make API calls when offline
+                const isOnline = window.offlineStorage && window.offlineStorage.isOnline ? window.offlineStorage.isOnline() : navigator.onLine;
+                
+                if (!isOnline) {
+                    // Offline: hide suggestions, let user type manually
+                    locationSuggestions.style.display = 'none';
+                    return;
+                }
+                
+                clearTimeout(searchTimeout);
+                
+                if (query.length < 3) {
+                    locationSuggestions.style.display = 'none';
+                    return;
+                }
+                
+                // Show loading indicator
+                locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--text-secondary); text-align: center;">Searching...</div>';
+                locationSuggestions.style.display = 'block';
+                
+                searchTimeout = setTimeout(async () => {
+                    try {
+                        const response = await fetch(
+                            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`,
+                            {
+                                headers: {
+                                    'User-Agent': 'VehicleSafetyQRSystem/1.0'
+                                }
+                            }
+                        );
+                        
+                        const results = await response.json();
+                        
+                        if (results.length === 0) {
+                            locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--text-secondary);">No locations found</div>';
+                            locationSuggestions.style.display = 'block';
+                            return;
+                        }
+                        
+                        locationSuggestions.innerHTML = results.map(result => {
+                            const displayName = result.display_name || `${result.lat}, ${result.lon}`;
+                            // Escape HTML and quotes properly
+                            const safeDisplayName = displayName.replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+                            return `
+                                <div 
+                                    class="location-suggestion-item" 
+                                    style="padding: 0.75rem; cursor: pointer; border-bottom: 1px solid #eee;"
+                                    onmouseover="this.style.backgroundColor='#f0f0f0'"
+                                    onmouseout="this.style.backgroundColor='white'"
+                                    onclick="selectLocation(${result.lat}, ${result.lon}, '${safeDisplayName}')"
+                                >
+                                    <strong style="display: block; margin-bottom: 0.25rem;">${displayName}</strong>
+                                    <small style="color: var(--text-secondary);">${result.lat}, ${result.lon}</small>
+                                </div>
+                            `;
+                        }).join('');
+                        
+                        locationSuggestions.style.display = 'block';
+                    } catch (error) {
+                        console.error('Location search error:', error);
+                        // Only show error if online (offline errors are expected)
+                        if (isOnline) {
+                            locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--danger-color);">Error searching locations. Please try again.</div>';
+                            locationSuggestions.style.display = 'block';
+                        }
+                    }
+                }, 500);
+            });
+            
+            searchInitialized = true;
+            console.log('OpenStreetMap location search initialized');
+        }
         
         <% if (googleMapsApiKey) { %>
         // Initialize Google Maps Places Autocomplete when API loads
         function initGoogleMapsAutocomplete() {
             if (typeof google !== 'undefined' && google.maps && google.maps.places) {
-                // Create Autocomplete object
-                autocomplete = new google.maps.places.Autocomplete(locationSearchInput, {
-                    types: ['geocode', 'establishment'], // Limit to addresses and places
-                    fields: ['geometry', 'formatted_address', 'name', 'place_id']
-                });
-                
-                // Handle place selection
-                autocomplete.addListener('place_changed', () => {
-                    const place = autocomplete.getPlace();
+                try {
+                    // Create Autocomplete object
+                    autocomplete = new google.maps.places.Autocomplete(locationSearchInput, {
+                        types: ['geocode', 'establishment'], // Limit to addresses and places
+                        fields: ['geometry', 'formatted_address', 'name', 'place_id']
+                    });
                     
-                    if (!place.geometry || !place.geometry.location) {
-                        locationStatus.className = 'location-status error';
-                        locationStatus.textContent = 'No details available for this location. Please try another.';
-                        return;
-                    }
+                    // Handle place selection
+                    autocomplete.addListener('place_changed', () => {
+                        const place = autocomplete.getPlace();
+                        
+                        if (!place.geometry || !place.geometry.location) {
+                            locationStatus.style.display = 'block';
+                            locationStatus.className = 'location-status error';
+                            locationStatus.textContent = 'No details available for this location. Please try another.';
+                            return;
+                        }
+                        
+                        const lat = place.geometry.location.lat();
+                        const lng = place.geometry.location.lng();
+                        const displayName = place.formatted_address || place.name || 'Selected Location';
+                        
+                        setLocation(lat, lng, displayName);
+                        
+                        // Hide any suggestion dropdowns
+                        locationSuggestions.style.display = 'none';
+                    });
                     
-                    const lat = place.geometry.location.lat();
-                    const lng = place.geometry.location.lng();
-                    const displayName = place.formatted_address || place.name || 'Selected Location';
-                    
-                    setLocation(lat, lng, displayName);
-                    
-                    // Hide any suggestion dropdowns
-                    locationSuggestions.style.display = 'none';
-                });
-                
-                console.log('Google Maps Places Autocomplete initialized');
+                    console.log('✅ Google Maps Places Autocomplete initialized');
+                } catch (error) {
+                    console.error('Error initializing Google Maps Autocomplete:', error);
+                    // Fallback to OpenStreetMap
+                    initOpenStreetMapSearch();
+                }
             } else {
-                console.error('Google Maps API not loaded');
-                fallbackToManualSearch();
+                console.warn('Google Maps API not loaded, using OpenStreetMap fallback');
+                initOpenStreetMapSearch();
             }
         }
         
+        // Initialize OpenStreetMap search immediately (works as fallback)
+        initOpenStreetMapSearch();
+        
         // Wait for Google Maps API to load
         if (typeof google !== 'undefined' && google.maps && google.maps.places) {
+            // Already loaded, initialize immediately
             initGoogleMapsAutocomplete();
         } else {
             // Check every 100ms if Google Maps API is loaded
@@ -357,164 +465,30 @@
                 }
             }, 100);
             
-            // Timeout after 5 seconds
+            // Timeout after 5 seconds - if Google Maps doesn't load, OpenStreetMap is already working
             setTimeout(() => {
                 clearInterval(checkGoogleMaps);
                 if (!autocomplete) {
-                    console.warn('Google Maps API failed to load, using fallback search');
-                    fallbackToManualSearch();
+                    console.warn('Google Maps API failed to load, using OpenStreetMap search (already initialized)');
                 }
             }, 5000);
         }
-        
-        // Fallback to OpenStreetMap if Google Maps is not available
-        function fallbackToManualSearch() {
-            locationSearchInput.addEventListener('input', (e) => {
-                const query = e.target.value.trim();
-                
-                // Check if offline - don't make API calls when offline
-                const isOnline = window.offlineStorage && window.offlineStorage.isOnline ? window.offlineStorage.isOnline() : navigator.onLine;
-                
-                if (!isOnline) {
-                    // Offline: hide suggestions, let user type manually
-                    locationSuggestions.style.display = 'none';
-                    return;
-                }
-                
-                clearTimeout(searchTimeout);
-                
-                if (query.length < 3) {
-                    locationSuggestions.style.display = 'none';
-                    return;
-                }
-                
-                searchTimeout = setTimeout(async () => {
-                    try {
-                        const response = await fetch(
-                            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`,
-                            {
-                                headers: {
-                                    'User-Agent': 'VehicleSafetyQRSystem/1.0'
-                                }
-                            }
-                        );
-                        
-                        const results = await response.json();
-                        
-                        if (results.length === 0) {
-                            locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--text-secondary);">No locations found</div>';
-                            locationSuggestions.style.display = 'block';
-                            return;
-                        }
-                        
-                        locationSuggestions.innerHTML = results.map(result => {
-                            const displayName = result.display_name || `${result.lat}, ${result.lon}`;
-                            return `
-                                <div 
-                                    class="location-suggestion-item" 
-                                    style="padding: 0.75rem; cursor: pointer; border-bottom: 1px solid #eee;"
-                                    onmouseover="this.style.backgroundColor='#f0f0f0'"
-                                    onmouseout="this.style.backgroundColor='white'"
-                                    onclick="selectLocation(${result.lat}, ${result.lon}, '${displayName.replace(/'/g, "\\'")}')"
-                                >
-                                    <strong style="display: block; margin-bottom: 0.25rem;">${result.display_name || 'Location'}</strong>
-                                    <small style="color: var(--text-secondary);">${result.lat}, ${result.lon}</small>
-                                </div>
-                            `;
-                        }).join('');
-                        
-                        locationSuggestions.style.display = 'block';
-                    } catch (error) {
-                        console.error('Location search error:', error);
-                        // Only show error if online (offline errors are expected)
-                        if (isOnline) {
-                            locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--danger-color);">Error searching locations. Please try again.</div>';
-                            locationSuggestions.style.display = 'block';
-                        }
-                    }
-                }, 500);
-            });
-        }
         <% } else { %>
-        // Google Maps API key not configured - use OpenStreetMap fallback
-        console.warn('Google Maps API key not configured, using OpenStreetMap');
-        
-        // Fallback to OpenStreetMap if Google Maps is not available
-        function fallbackToManualSearch() {
-            locationSearchInput.addEventListener('input', (e) => {
-                const query = e.target.value.trim();
-                
-                // Check if offline - don't make API calls when offline
-                const isOnline = window.offlineStorage && window.offlineStorage.isOnline ? window.offlineStorage.isOnline() : navigator.onLine;
-                
-                if (!isOnline) {
-                    // Offline: hide suggestions, let user type manually
-                    locationSuggestions.style.display = 'none';
-                    return;
-                }
-                
-                clearTimeout(searchTimeout);
-                
-                if (query.length < 3) {
-                    locationSuggestions.style.display = 'none';
-                    return;
-                }
-                
-                searchTimeout = setTimeout(async () => {
-                    try {
-                        const response = await fetch(
-                            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`,
-                            {
-                                headers: {
-                                    'User-Agent': 'VehicleSafetyQRSystem/1.0'
-                                }
-                            }
-                        );
-                        
-                        const results = await response.json();
-                        
-                        if (results.length === 0) {
-                            locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--text-secondary);">No locations found</div>';
-                            locationSuggestions.style.display = 'block';
-                            return;
-                        }
-                        
-                        locationSuggestions.innerHTML = results.map(result => {
-                            const displayName = result.display_name || `${result.lat}, ${result.lon}`;
-                            return `
-                                <div 
-                                    class="location-suggestion-item" 
-                                    style="padding: 0.75rem; cursor: pointer; border-bottom: 1px solid #eee;"
-                                    onmouseover="this.style.backgroundColor='#f0f0f0'"
-                                    onmouseout="this.style.backgroundColor='white'"
-                                    onclick="selectLocation(${result.lat}, ${result.lon}, '${displayName.replace(/'/g, "\\'")}')"
-                                >
-                                    <strong style="display: block; margin-bottom: 0.25rem;">${result.display_name || 'Location'}</strong>
-                                    <small style="color: var(--text-secondary);">${result.lat}, ${result.lon}</small>
-                                </div>
-                            `;
-                        }).join('');
-                        
-                        locationSuggestions.style.display = 'block';
-                    } catch (error) {
-                        console.error('Location search error:', error);
-                        // Only show error if online (offline errors are expected)
-                        if (isOnline) {
-                            locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--danger-color);">Error searching locations. Please try again.</div>';
-                            locationSuggestions.style.display = 'block';
-                        }
-                    }
-                }, 500);
-            });
-        }
-        fallbackToManualSearch();
+        // Google Maps API key not configured - use OpenStreetMap
+        console.log('Google Maps API key not configured, using OpenStreetMap');
+        initOpenStreetMapSearch();
         <% } %>
 
         // Select location from search results (for fallback OpenStreetMap search)
         window.selectLocation = function(lat, lng, displayName) {
-            locationSearchInput.value = displayName;
+            // Decode HTML entities if present
+            const decodedName = displayName
+                .replace(/&#39;/g, "'")
+                .replace(/&quot;/g, '"')
+                .replace(/&amp;/g, '&');
+            locationSearchInput.value = decodedName;
             locationSuggestions.style.display = 'none';
-            setLocation(lat, lng, displayName);
+            setLocation(lat, lng, decodedName);
         };
 
         // Hide suggestions when clicking outside (only for fallback search)
@@ -651,21 +625,56 @@
         // Initial status check
         updateOfflineStatus();
 
-        // Connectivity Detection
+        // Enhanced Cellular Network Detection (5G/4G/3G/2G)
+        function detectCellularNetwork() {
+            const connection = navigator.connection || 
+                              navigator.mozConnection || 
+                              navigator.webkitConnection;
+            
+            if (!connection) {
+                // Fallback: if we can't detect, assume cellular might be available
+                // when navigator.onLine is false but device has cellular capability
+                return { available: null, type: 'unknown' };
+            }
+            
+            const networkType = connection.effectiveType || connection.type;
+            const isCellular = networkType === 'cellular' || 
+                              networkType === '2g' || 
+                              networkType === '3g' || 
+                              networkType === '4g' ||
+                              networkType === '5g' ||
+                              connection.type === 'cellular';
+            
+            return {
+                available: isCellular,
+                type: networkType,
+                downlink: connection.downlink,
+                rtt: connection.rtt
+            };
+        }
+
+        // Check if device is in airplane mode (truly offline)
+        function isInAirplaneMode() {
+            // If navigator.onLine is false AND we can't detect any connection type,
+            // likely in airplane mode
+            if (!navigator.onLine) {
+                const connection = navigator.connection || 
+                                  navigator.mozConnection || 
+                                  navigator.webkitConnection;
+                return !connection || connection.type === 'none';
+            }
+            return false;
+        }
+
+        // Connectivity Detection (legacy function - kept for compatibility)
         function checkConnectivity() {
             const hasInternet = navigator.onLine;
+            const cellularInfo = detectCellularNetwork();
             
-            // Check for cellular connection (Network Information API)
-            const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-            const hasCellular = connection && (
-                connection.type === 'cellular' || 
-                connection.type === '2g' || 
-                connection.type === '3g' || 
-                connection.type === '4g' ||
-                connection.type === '5g'
-            );
-            
-            return { hasInternet, hasCellular };
+            return { 
+                hasInternet, 
+                hasCellular: cellularInfo.available === true || cellularInfo.available === null 
+            };
         }
 
         // Build SMS Message
@@ -806,8 +815,9 @@
                     throw new Error(`Server error: ${response.status} ${response.statusText}`);
                 }
             } catch (error) {
-                // STEP 3: Cellular attempt failed - store offline and sync later
-                console.warn('⚠️ Cellular network failed, storing offline for later sync:', error);
+                // STEP 3: Check if we have cellular network for SMS (bystander never sees emergency contacts)
+                const cellularInfo = detectCellularNetwork();
+                const airplaneMode = isInAirplaneMode();
                 
                 // Check if it's a network error (not a validation error)
                 const isNetworkError = error.name === 'AbortError' || 
@@ -823,6 +833,90 @@
                     locationStatus.textContent = `⚠️ Error: ${error.message}`;
                     return;
                 }
+                
+                // Network error - check if we can use SMS via cellular
+                // If offline but NOT in airplane mode, cellular might be available
+                if (!navigator.onLine && !airplaneMode) {
+                    // Check if cellular is explicitly available OR if we can't detect (assume it might be)
+                    if (cellularInfo.available === true || cellularInfo.available === null) {
+                        console.log(`📶 Cellular network may be available (${cellularInfo.type || 'unknown'}) - attempting SMS via service number`);
+                        
+                        // Get service number
+                        const serviceNumber = '<%= smsServiceNumber || "" %>';
+                        
+                        if (serviceNumber) {
+                            // Use existing SMS function - bystander sends to service number only
+                            submitBtn.textContent = 'Opening SMS...';
+                            locationStatus.className = 'location-status info';
+                            locationStatus.textContent = '📱 Opening SMS app to send report via cellular network...';
+                            
+                            // Call existing sendViaSMS function
+                            sendViaSMS();
+                            
+                            // Also store offline for server sync when internet returns (for email notifications)
+                            // This ensures we still get email notifications when internet is restored
+                            setTimeout(async () => {
+                                try {
+                                    if (!offlineStorageReady) {
+                                        console.log('🔄 Initializing offline storage...');
+                                        await initOfflineStorage();
+                                    }
+                                    
+                                    if (window.offlineStorage) {
+                                        const qrToken = formData.get('qrToken');
+                                        const latitude = formData.get('latitude');
+                                        const longitude = formData.get('longitude');
+                                        const manualLocation = formData.get('manualLocation');
+                                        const helperNote = formData.get('helperNote');
+                                        const imageFiles = Array.from(formData.getAll('images')).filter(file => 
+                                            file && file instanceof File && file.size > 0
+                                        );
+                                        
+                                        const reportId = await window.offlineStorage.queueReport({
+                                            qrToken: qrToken,
+                                            latitude: latitude || null,
+                                            longitude: longitude || null,
+                                            manualLocation: manualLocation || null,
+                                            helperNote: helperNote || null
+                                        });
+                                        
+                                        if (imageFiles && imageFiles.length > 0) {
+                                            for (const file of imageFiles) {
+                                                if (file && file.size > 0) {
+                                                    await window.offlineStorage.storeImage(file, reportId);
+                                                }
+                                            }
+                                        }
+                                        
+                                        if (window.offlineSync) {
+                                            await window.offlineSync.updatePendingCount();
+                                            window.offlineSync.registerBackgroundSync();
+                                        }
+                                        
+                                        console.log('✅ Report also stored offline for email sync when internet returns');
+                                    }
+                                } catch (offlineError) {
+                                    console.warn('⚠️ Could not store offline backup:', offlineError);
+                                }
+                            }, 500);
+                            
+                            // Update UI after SMS opens
+                            setTimeout(() => {
+                                submitBtn.textContent = 'SMS Opened ✓';
+                                locationStatus.className = 'location-status success';
+                                locationStatus.textContent = '✅ SMS app opened! Please send the message. Report will also sync when internet is restored.';
+                            }, 1000);
+                            
+                            return; // Exit - SMS app opened
+                        } else {
+                            console.warn('⚠️ SMS service number not configured');
+                            // Fall through to offline storage
+                        }
+                    }
+                }
+                
+                // STEP 4: No cellular or airplane mode - store offline for later sync
+                console.warn('⚠️ No cellular network or airplane mode - storing offline for later sync:', error);
                 
                 // Network error - store offline
                 submitBtn.textContent = 'Saving Offline...';
@@ -923,91 +1017,6 @@
                     locationStatus.textContent = '⚠️ No internet connection and offline storage not available. Please connect to internet to submit.';
                 }
             }
-        });
-                        console.error('❌ Error queueing report:', error);
-                        console.error('Error details:', error.stack);
-                        submitBtn.textContent = 'Error Saving';
-                        locationStatus.className = 'location-status error';
-                        locationStatus.textContent = '⚠️ Error saving report offline: ' + error.message + '. Trying SMS fallback...';
-                        
-                        // Fall through to SMS fallback
-                    }
-                } else {
-                    console.error('❌ window.offlineStorage not available');
-                }
-                
-                // SMS fallback if offline storage failed or not available
-                if (hasCellular) {
-                    submitBtn.textContent = 'Opening SMS...';
-                    sendViaSMS();
-                    
-                    // Show thank you message after SMS is sent
-                    setTimeout(() => {
-                        locationStatus.className = 'location-status success';
-                        locationStatus.textContent = '✅ SMS opened! Please send it to notify emergency contacts.';
-                        submitBtn.textContent = 'SMS Sent';
-                    }, 500);
-                } else {
-                    // Last resort: try to save to IndexedDB even if initialization failed
-                    if (window.offlineStorage) {
-                        try {
-                            await initOfflineStorage();
-                            if (offlineStorageReady) {
-                                // Retry saving
-                                submitBtn.textContent = 'Saving Offline...';
-                                const formData = new FormData(form);
-                                const reportId = await window.offlineStorage.queueReport({
-                                    qrToken: formData.get('qrToken'),
-                                    latitude: formData.get('latitude') || null,
-                                    longitude: formData.get('longitude') || null,
-                                    manualLocation: formData.get('manualLocation') || null,
-                                    helperNote: formData.get('helperNote') || null
-                                });
-                                
-                                const imageFiles = formData.getAll('images');
-                                for (const file of imageFiles) {
-                                    if (file && file.size > 0) {
-                                        await window.offlineStorage.storeImage(file, reportId);
-                                    }
-                                }
-                                
-                                submitBtn.textContent = 'Saved Offline ✓';
-                                locationStatus.className = 'location-status success';
-                                locationStatus.textContent = '✅ Report saved offline! It will be sent automatically when connection is restored.';
-                                
-                                if (window.offlineSync) {
-                                    await window.offlineSync.updatePendingCount();
-                                    window.offlineSync.registerBackgroundSync();
-                                }
-                                
-                                setTimeout(() => {
-                                    form.reset();
-                                    imagePreviewContainer.innerHTML = '';
-                                    latitudeInput.value = '';
-                                    longitudeInput.value = '';
-                                    selectedLocationDisplay.textContent = '';
-                                    locationStatus.className = 'location-status info';
-                                    locationStatus.textContent = 'No location selected. Click "Use Current Location" or search for a location.';
-                                    submitBtn.disabled = false;
-                                    submitBtn.textContent = 'Submit Emergency Report';
-                                }, 2000);
-                                return;
-                            }
-                        } catch (error) {
-                            console.error('❌ Final attempt to save offline failed:', error);
-                        }
-                    }
-                    
-                    submitBtn.textContent = 'No Connection';
-                    locationStatus.className = 'location-status error';
-                    locationStatus.textContent = '⚠️ No internet or cellular connection. Please connect to internet to submit the report.';
-                    submitBtn.disabled = false;
-                }
-                return;
-            }
-            
-            // Has internet - submit normally
-            submitBtn.textContent = 'Submitting...';
         });
     </script>
 </body>
