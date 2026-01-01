@@ -54,6 +54,17 @@ app.use('/contacts', contactRoutes);
 app.use('/accidents', accidentRoutes);
 app.use('/qr', qrRoutes);
 
+// Health Check Endpoint: For UptimeRobot to keep server awake
+// This endpoint is pinged every 10-12 minutes to prevent Render free tier spin-down
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    message: 'Server is healthy and awake'
+  });
+});
+
 // Test Route: For mobile connectivity testing
 app.get('/test', (req, res) => {
   res.send(`

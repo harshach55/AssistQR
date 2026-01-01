@@ -793,8 +793,8 @@
                 const response = await fetch('/accidents/report', {
                     method: 'POST',
                     body: formData,
-                    // Add timeout to detect network failures quickly
-                    signal: AbortSignal.timeout(30000) // 30 second timeout
+                    // Increased timeout to account for Render free tier spin-up (50 seconds)
+                    signal: AbortSignal.timeout(60000) // 60 second timeout
                 });
                 
                 if (response.ok) {
@@ -839,78 +839,101 @@
                 if (!navigator.onLine && !airplaneMode) {
                     // Check if cellular is explicitly available OR if we can't detect (assume it might be)
                     if (cellularInfo.available === true || cellularInfo.available === null) {
-                        console.log(`📶 Cellular network may be available (${cellularInfo.type || 'unknown'}) - attempting SMS via service number`);
+                        console.log(`📴 Offline detected - attempting to send SMS via cellular network...`);
+                        submitBtn.textContent = 'Sending via Cellular...';
+                        locationStatus.style.display = 'block';
+                        locationStatus.className = 'location-status info';
+                        locationStatus.textContent = '📱 Sending report via cellular network (SMS only)...';
                         
-                        // Get service number
-                        const serviceNumber = '<%= smsServiceNumber || "" %>';
-                        
-                        if (serviceNumber) {
-                            // Use existing SMS function - bystander sends to service number only
-                            submitBtn.textContent = 'Opening SMS...';
-                            locationStatus.className = 'location-status info';
-                            locationStatus.textContent = '📱 Opening SMS app to send report via cellular network...';
+                        try {
+                            // Try to send to offline endpoint (SMS only, no email)
+                            // Server will send SMS directly to emergency contacts (bystander never sees them)
+                            const offlineResponse = await fetch('/accidents/report-offline', {
+                                method: 'POST',
+                                body: formData,
+                                signal: AbortSignal.timeout(60000) // 60 seconds for Render spin-up
+                            });
                             
-                            // Call existing sendViaSMS function
-                            sendViaSMS();
-                            
-                            // Also store offline for server sync when internet returns (for email notifications)
-                            // This ensures we still get email notifications when internet is restored
-                            setTimeout(async () => {
-                                try {
-                                    if (!offlineStorageReady) {
-                                        console.log('🔄 Initializing offline storage...');
-                                        await initOfflineStorage();
-                                    }
-                                    
-                                    if (window.offlineStorage) {
-                                        const qrToken = formData.get('qrToken');
-                                        const latitude = formData.get('latitude');
-                                        const longitude = formData.get('longitude');
-                                        const manualLocation = formData.get('manualLocation');
-                                        const helperNote = formData.get('helperNote');
-                                        const imageFiles = Array.from(formData.getAll('images')).filter(file => 
-                                            file && file instanceof File && file.size > 0
-                                        );
+                            if (offlineResponse.ok) {
+                                const result = await offlineResponse.json();
+                                
+                                // SUCCESS: SMS sent via cellular!
+                                console.log('✅ Report sent successfully via cellular network (SMS only)');
+                                
+                                // Show success message
+                                submitBtn.textContent = 'SMS Sent ✓';
+                                locationStatus.className = 'location-status success';
+                                locationStatus.textContent = '✅ Report sent via cellular network! Emergency contacts have been notified via SMS.';
+                                
+                                // Also store offline for email sync when internet returns
+                                setTimeout(async () => {
+                                    try {
+                                        if (!offlineStorageReady) {
+                                            console.log('🔄 Initializing offline storage...');
+                                            await initOfflineStorage();
+                                        }
                                         
-                                        const reportId = await window.offlineStorage.queueReport({
-                                            qrToken: qrToken,
-                                            latitude: latitude || null,
-                                            longitude: longitude || null,
-                                            manualLocation: manualLocation || null,
-                                            helperNote: helperNote || null
-                                        });
-                                        
-                                        if (imageFiles && imageFiles.length > 0) {
-                                            for (const file of imageFiles) {
-                                                if (file && file.size > 0) {
-                                                    await window.offlineStorage.storeImage(file, reportId);
+                                        if (window.offlineStorage) {
+                                            const qrToken = formData.get('qrToken');
+                                            const latitude = formData.get('latitude');
+                                            const longitude = formData.get('longitude');
+                                            const manualLocation = formData.get('manualLocation');
+                                            const helperNote = formData.get('helperNote');
+                                            const imageFiles = Array.from(formData.getAll('images')).filter(file => 
+                                                file && file instanceof File && file.size > 0
+                                            );
+                                            
+                                            const reportId = await window.offlineStorage.queueReport({
+                                                qrToken: qrToken,
+                                                latitude: latitude || null,
+                                                longitude: longitude || null,
+                                                manualLocation: manualLocation || null,
+                                                helperNote: helperNote || null
+                                            });
+                                            
+                                            if (imageFiles && imageFiles.length > 0) {
+                                                for (const file of imageFiles) {
+                                                    if (file && file.size > 0) {
+                                                        await window.offlineStorage.storeImage(file, reportId);
+                                                    }
                                                 }
                                             }
+                                            
+                                            if (window.offlineSync) {
+                                                await window.offlineSync.updatePendingCount();
+                                                window.offlineSync.registerBackgroundSync();
+                                            }
+                                            
+                                            console.log('✅ Report also stored offline for email sync when internet returns');
                                         }
-                                        
-                                        if (window.offlineSync) {
-                                            await window.offlineSync.updatePendingCount();
-                                            window.offlineSync.registerBackgroundSync();
-                                        }
-                                        
-                                        console.log('✅ Report also stored offline for email sync when internet returns');
+                                    } catch (offlineError) {
+                                        console.warn('⚠️ Could not store offline backup:', offlineError);
                                     }
-                                } catch (offlineError) {
-                                    console.warn('⚠️ Could not store offline backup:', offlineError);
-                                }
-                            }, 500);
-                            
-                            // Update UI after SMS opens
-                            setTimeout(() => {
-                                submitBtn.textContent = 'SMS Opened ✓';
-                                locationStatus.className = 'location-status success';
-                                locationStatus.textContent = '✅ SMS app opened! Please send the message. Report will also sync when internet is restored.';
-                            }, 1000);
-                            
-                            return; // Exit - SMS app opened
-                        } else {
-                            console.warn('⚠️ SMS service number not configured');
-                            // Fall through to offline storage
+                                }, 500);
+                                
+                                // Reset form after 3 seconds
+                                setTimeout(() => {
+                                    form.reset();
+                                    imagePreviewContainer.innerHTML = '';
+                                    latitudeInput.value = '';
+                                    longitudeInput.value = '';
+                                    selectedLocationDisplay.textContent = '';
+                                    locationStatus.style.display = 'none';
+                                    locationStatus.className = 'location-status info';
+                                    locationStatus.textContent = 'No location selected. Click "Use Current Location" or search for a location.';
+                                    submitBtn.disabled = false;
+                                    submitBtn.textContent = 'Submit Emergency Report';
+                                }, 3000);
+                                
+                                return; // Success - exit
+                            } else {
+                                const errorData = await offlineResponse.json().catch(() => ({ error: 'Server error' }));
+                                throw new Error(errorData.error || `Server error: ${offlineResponse.status}`);
+                            }
+                        } catch (offlineError) {
+                            // Cellular SMS attempt failed - store offline for later
+                            console.warn('⚠️ Cellular SMS failed, storing offline for later sync:', offlineError);
+                            // Fall through to offline storage below
                         }
                     }
                 }

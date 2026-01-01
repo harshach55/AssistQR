@@ -141,8 +141,9 @@ router.post('/report', (req, res, next) => {
           color: vehicle.color
     };
 
-    // Send notifications to all emergency contacts in parallel
-    const notificationPromises = vehicle.emergencyContacts.flatMap(contact => [
+    // Send EMAIL ONLY to all emergency contacts (online mode)
+    // SMS is sent separately via /report-offline endpoint when offline
+    const notificationPromises = vehicle.emergencyContacts.map(contact => 
       sendAccidentAlertEmail({
         vehicle: vehicleData,
         contact: { name: contact.name, email: contact.email },
@@ -152,22 +153,12 @@ router.post('/report', (req, res, next) => {
       }).catch(err => {
         console.error(`Failed to send email to ${contact.email}:`, err);
         return { success: false };
-      }),
-      sendAccidentAlertSMS({
-        vehicle: vehicleData,
-        contact: { name: contact.name, phoneNumber: contact.phoneNumber },
-        lat, lng, imageUrls,
-        helperNote: helperNote || null,
-        manualLocation: manualLocation || null
-      }).catch(err => {
-        console.error(`Failed to send SMS to ${contact.phoneNumber}:`, err);
-        return { success: false };
       })
-    ]);
+    );
 
-    console.log('⏳ Sending notifications to', vehicle.emergencyContacts.length, 'contact(s)...');
+    console.log('⏳ Sending email notifications to', vehicle.emergencyContacts.length, 'contact(s)...');
     await Promise.all(notificationPromises);
-    console.log('✅ All notifications sent!');
+    console.log('✅ All email notifications sent!');
 
     res.render('accidents/thankyou', {
       vehicleLicensePlate: vehicle.licensePlate,
@@ -178,6 +169,145 @@ router.post('/report', (req, res, next) => {
     res.status(500).render('error', {
       message: 'Error processing your report. Please try again.',
       error: process.env.NODE_ENV === 'development' ? error : null
+    });
+  }
+});
+
+// Offline Report Endpoint: Sends SMS only (for cellular network submissions)
+// This endpoint is used when internet is down but cellular is available
+// Bystander never sees emergency contacts - server sends SMS directly
+router.post('/report-offline', (req, res, next) => {
+  uploadMultiple(req, res, (err) => {
+    if (err) {
+      console.error('File upload error:', err);
+      const messages = {
+        'LIMIT_FILE_SIZE': 'File too large. Maximum size is 100MB per file.',
+        'LIMIT_FILE_COUNT': 'Too many files. Maximum 10 images allowed.'
+      };
+      return res.status(400).json({
+        success: false,
+        error: messages[err.code] || `File upload error: ${err.message || 'Unknown error'}`
+      });
+    }
+    next();
+  });
+}, [
+  body('qrToken').notEmpty(),
+  body('latitude').optional({ checkFalsy: true }).custom((value) => {
+    if (value === '' || value === null || value === undefined) {
+      return true;
+    }
+    const num = parseFloat(value);
+    if (isNaN(num) || num < -90 || num > 90) {
+      throw new Error('Latitude must be between -90 and 90');
+    }
+    return true;
+  }),
+  body('longitude').optional({ checkFalsy: true }).custom((value) => {
+    if (value === '' || value === null || value === undefined) {
+      return true;
+    }
+    const num = parseFloat(value);
+    if (isNaN(num) || num < -180 || num > 180) {
+      throw new Error('Longitude must be between -180 and 180');
+    }
+    return true;
+  }),
+  body('manualLocation').optional({ checkFalsy: true }).trim().isLength({ max: 500 }),
+  body('helperNote').optional({ checkFalsy: true }).trim().isLength({ max: 1000 })
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      const relevantErrors = errors.array().filter(err => 
+        !['latitude', 'longitude'].includes(err.param) || err.value
+      );
+      if (relevantErrors.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid form data',
+          details: relevantErrors
+        });
+      }
+    }
+
+    const { qrToken, latitude, longitude, manualLocation, helperNote } = req.body;
+
+    const vehicle = await prisma.vehicle.findUnique({
+      where: { qrToken },
+      include: {
+        emergencyContacts: true,
+        user: { select: { id: true, name: true } }
+      }
+    });
+
+    if (!vehicle) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invalid QR code. Vehicle not found.'
+      });
+    }
+
+    const lat = latitude ? parseFloat(latitude) : null;
+    const lng = longitude ? parseFloat(longitude) : null;
+
+    // Get image URLs (if any - images may not be available via cellular)
+    const imageUrls = (req.files || []).map(file => {
+      const url = file.location || getFileUrl(file.filename || file.key);
+      return url;
+    }).filter(Boolean);
+
+    // Create accident report in database
+    const accidentReport = await prisma.accidentReport.create({
+      data: {
+        vehicleId: vehicle.id,
+        lat,
+        lng,
+        manualLocation: manualLocation?.trim() || null,
+        helperNote: helperNote?.trim() || null,
+        images: { create: imageUrls.map(url => ({ imageUrl: url })) }
+      },
+      include: { images: true }
+    });
+
+    // Prepare notification data
+    const vehicleData = {
+      licensePlate: vehicle.licensePlate,
+      model: vehicle.model,
+      color: vehicle.color
+    };
+
+    // Send SMS ONLY to all emergency contacts (no email - internet is down)
+    // Bystander never sees these phone numbers - server handles it
+    console.log('📱 Offline mode: Sending SMS notifications to', vehicle.emergencyContacts.length, 'contact(s)...');
+    const smsPromises = vehicle.emergencyContacts.map(contact => 
+      sendAccidentAlertSMS({
+        vehicle: vehicleData,
+        contact: { name: contact.name, phoneNumber: contact.phoneNumber },
+        lat, lng, imageUrls,
+        helperNote: helperNote || null,
+        manualLocation: manualLocation || null
+      }).catch(err => {
+        console.error(`Failed to send SMS to ${contact.phoneNumber}:`, err);
+        return { success: false };
+      })
+    );
+
+    await Promise.all(smsPromises);
+    console.log('✅ All SMS notifications sent via cellular network!');
+
+    // Return JSON response (for offline cellular submissions)
+    res.json({
+      success: true,
+      message: 'Emergency report received via cellular network. Emergency contacts have been notified via SMS.',
+      reportId: accidentReport.id
+    });
+  } catch (error) {
+    console.error('Error processing offline accident report:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error processing your report. Please try again.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
