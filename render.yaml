@@ -16,6 +16,13 @@ services:
         fromDatabase:
           name: assistqr-db
           property: connectionString
+      # Twilio SMS Configuration - Add these values in Render Dashboard
+      # - key: TWILIO_ACCOUNT_SID
+      #   value: your-twilio-account-sid
+      # - key: TWILIO_AUTH_TOKEN
+      #   value: your-twilio-auth-token
+      # - key: TWILIO_FROM_NUMBER
+      #   value: +1234567890
     healthCheckPath: /
 
 databases:
