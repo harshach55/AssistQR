@@ -45,6 +45,90 @@
             color: #0c5460;
             border: 1px solid #bee5eb;
         }
+        
+        /* Debug Panel Styles */
+        #debug-panel {
+            position: fixed;
+            bottom: 60px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.95);
+            color: #0f0;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            max-width: 90%;
+            width: 350px;
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 10000;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            border: 2px solid #0f0;
+        }
+        #debug-panel.show {
+            display: block;
+        }
+        #debug-panel .log {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #0f0;
+            padding-left: 10px;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+        #debug-panel .error {
+            color: #f00;
+            border-left-color: #f00;
+        }
+        #debug-panel .warn {
+            color: #ff0;
+            border-left-color: #ff0;
+        }
+        #debug-panel .info {
+            color: #0ff;
+            border-left-color: #0ff;
+        }
+        #debug-toggle {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 12px 18px;
+            border-radius: 25px;
+            z-index: 10001;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        #debug-toggle:hover {
+            background: #c82333;
+        }
+        #debug-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #0f0;
+        }
+        #debug-panel-header h3 {
+            margin: 0;
+            color: #0f0;
+            font-size: 14px;
+        }
+        #debug-clear {
+            background: #333;
+            color: #0f0;
+            border: 1px solid #0f0;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+        }
     </style>
 </head>
 <body>
