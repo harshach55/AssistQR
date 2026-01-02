@@ -217,8 +217,15 @@ router.post('/report-offline', (req, res, next) => {
   body('helperNote').optional({ checkFalsy: true }).trim().isLength({ max: 1000 })
 ], async (req, res) => {
   try {
+    console.log('📱 ===== OFFLINE REPORT RECEIVED =====');
+    console.log('📱 Request method:', req.method);
+    console.log('📱 Request headers:', JSON.stringify(req.headers, null, 2));
+    console.log('📱 Request body keys:', Object.keys(req.body));
+    console.log('📱 Files received:', req.files ? req.files.length : 0);
+    
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.error('❌ Validation errors:', errors.array());
       const relevantErrors = errors.array().filter(err => 
         !['latitude', 'longitude'].includes(err.param) || err.value
       );
@@ -232,6 +239,7 @@ router.post('/report-offline', (req, res, next) => {
     }
 
     const { qrToken, latitude, longitude, manualLocation, helperNote } = req.body;
+    console.log('📱 Report data:', { qrToken, latitude, longitude, manualLocation, helperNote });
 
     const vehicle = await prisma.vehicle.findUnique({
       where: { qrToken },
@@ -280,21 +288,26 @@ router.post('/report-offline', (req, res, next) => {
     // Send SMS ONLY to all emergency contacts (no email - internet is down)
     // Bystander never sees these phone numbers - server handles it
     console.log('📱 Offline mode: Sending SMS notifications to', vehicle.emergencyContacts.length, 'contact(s)...');
-    const smsPromises = vehicle.emergencyContacts.map(contact => 
-      sendAccidentAlertSMS({
+    console.log('📱 Emergency contacts:', vehicle.emergencyContacts.map(c => ({ name: c.name, phone: c.phoneNumber })));
+    
+    const smsPromises = vehicle.emergencyContacts.map(contact => {
+      console.log(`📱 Preparing SMS for ${contact.name} (${contact.phoneNumber})...`);
+      return sendAccidentAlertSMS({
         vehicle: vehicleData,
         contact: { name: contact.name, phoneNumber: contact.phoneNumber },
         lat, lng, imageUrls,
         helperNote: helperNote || null,
         manualLocation: manualLocation || null
       }).catch(err => {
-        console.error(`Failed to send SMS to ${contact.phoneNumber}:`, err);
-        return { success: false };
-      })
-    );
+        console.error(`❌ Failed to send SMS to ${contact.phoneNumber}:`, err);
+        return { success: false, error: err.message };
+      });
+    });
 
-    await Promise.all(smsPromises);
-    console.log('✅ All SMS notifications sent via cellular network!');
+    const smsResults = await Promise.all(smsPromises);
+    console.log('📱 SMS sending results:', smsResults);
+    const successCount = smsResults.filter(r => r.success).length;
+    console.log(`✅ ${successCount}/${vehicle.emergencyContacts.length} SMS notifications sent successfully!`);
 
     // Return JSON response (for offline cellular submissions)
     res.json({

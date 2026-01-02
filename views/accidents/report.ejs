@@ -819,6 +819,15 @@
                 const cellularInfo = detectCellularNetwork();
                 const airplaneMode = isInAirplaneMode();
                 
+                console.log('🔍 Error details:', {
+                    errorName: error.name,
+                    errorMessage: error.message,
+                    navigatorOnLine: navigator.onLine,
+                    airplaneMode: airplaneMode,
+                    cellularAvailable: cellularInfo.available,
+                    cellularType: cellularInfo.type
+                });
+                
                 // Check if it's a network error (not a validation error)
                 const isNetworkError = error.name === 'AbortError' || 
                                       error.name === 'TypeError' || 
@@ -827,6 +836,7 @@
                 
                 if (!isNetworkError) {
                     // Not a network error - show error to user
+                    console.log('❌ Not a network error, showing error to user');
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Submit Emergency Report';
                     locationStatus.className = 'location-status error';
@@ -835,107 +845,125 @@
                 }
                 
                 // Network error - check if we can use SMS via cellular
-                // If offline but NOT in airplane mode, cellular might be available
+                // If offline but NOT in airplane mode, try cellular SMS (be aggressive)
                 if (!navigator.onLine && !airplaneMode) {
-                    // Check if cellular is explicitly available OR if we can't detect (assume it might be)
-                    if (cellularInfo.available === true || cellularInfo.available === null) {
-                        console.log(`📴 Offline detected - attempting to send SMS via cellular network...`);
-                        submitBtn.textContent = 'Sending via Cellular...';
-                        locationStatus.style.display = 'block';
-                        locationStatus.className = 'location-status info';
-                        locationStatus.textContent = '📱 Sending report via cellular network (SMS only)...';
+                    // Always try cellular SMS when offline but not in airplane mode
+                    // Even if we can't detect cellular, mobile devices usually have it
+                    console.log(`📴 Offline detected (not airplane mode) - attempting to send SMS via cellular network...`);
+                    console.log(`   Cellular detection: available=${cellularInfo.available}, type=${cellularInfo.type}`);
+                    submitBtn.textContent = 'Sending via Cellular...';
+                    locationStatus.style.display = 'block';
+                    locationStatus.className = 'location-status info';
+                    locationStatus.textContent = '📱 Sending report via cellular network (SMS only)...';
+                    
+                    try {
+                        // Try to send to offline endpoint (SMS only, no email)
+                        // Server will send SMS directly to emergency contacts (bystander never sees them)
+                        console.log('📤 Attempting POST to /accidents/report-offline...');
+                        const offlineResponse = await fetch('/accidents/report-offline', {
+                            method: 'POST',
+                            body: formData,
+                            signal: AbortSignal.timeout(60000) // 60 seconds for Render spin-up
+                        });
                         
-                        try {
-                            // Try to send to offline endpoint (SMS only, no email)
-                            // Server will send SMS directly to emergency contacts (bystander never sees them)
-                            const offlineResponse = await fetch('/accidents/report-offline', {
-                                method: 'POST',
-                                body: formData,
-                                signal: AbortSignal.timeout(60000) // 60 seconds for Render spin-up
-                            });
+                        console.log('📥 Response received:', {
+                            ok: offlineResponse.ok,
+                            status: offlineResponse.status,
+                            statusText: offlineResponse.statusText
+                        });
+                        
+                        if (offlineResponse.ok) {
+                            const result = await offlineResponse.json();
+                            console.log('✅ Server response:', result);
                             
-                            if (offlineResponse.ok) {
-                                const result = await offlineResponse.json();
-                                
-                                // SUCCESS: SMS sent via cellular!
-                                console.log('✅ Report sent successfully via cellular network (SMS only)');
-                                
-                                // Show success message
-                                submitBtn.textContent = 'SMS Sent ✓';
-                                locationStatus.className = 'location-status success';
-                                locationStatus.textContent = '✅ Report sent via cellular network! Emergency contacts have been notified via SMS.';
-                                
-                                // Also store offline for email sync when internet returns
-                                setTimeout(async () => {
-                                    try {
-                                        if (!offlineStorageReady) {
-                                            console.log('🔄 Initializing offline storage...');
-                                            await initOfflineStorage();
-                                        }
+                            // SUCCESS: SMS sent via cellular!
+                            console.log('✅ Report sent successfully via cellular network (SMS only)');
+                            
+                            // Show success message
+                            submitBtn.textContent = 'SMS Sent ✓';
+                            locationStatus.className = 'location-status success';
+                            locationStatus.textContent = '✅ Report sent via cellular network! Emergency contacts have been notified via SMS.';
+                            
+                            // Also store offline for email sync when internet returns
+                            setTimeout(async () => {
+                                try {
+                                    if (!offlineStorageReady) {
+                                        console.log('🔄 Initializing offline storage...');
+                                        await initOfflineStorage();
+                                    }
+                                    
+                                    if (window.offlineStorage) {
+                                        const qrToken = formData.get('qrToken');
+                                        const latitude = formData.get('latitude');
+                                        const longitude = formData.get('longitude');
+                                        const manualLocation = formData.get('manualLocation');
+                                        const helperNote = formData.get('helperNote');
+                                        const imageFiles = Array.from(formData.getAll('images')).filter(file => 
+                                            file && file instanceof File && file.size > 0
+                                        );
                                         
-                                        if (window.offlineStorage) {
-                                            const qrToken = formData.get('qrToken');
-                                            const latitude = formData.get('latitude');
-                                            const longitude = formData.get('longitude');
-                                            const manualLocation = formData.get('manualLocation');
-                                            const helperNote = formData.get('helperNote');
-                                            const imageFiles = Array.from(formData.getAll('images')).filter(file => 
-                                                file && file instanceof File && file.size > 0
-                                            );
-                                            
-                                            const reportId = await window.offlineStorage.queueReport({
-                                                qrToken: qrToken,
-                                                latitude: latitude || null,
-                                                longitude: longitude || null,
-                                                manualLocation: manualLocation || null,
-                                                helperNote: helperNote || null
-                                            });
-                                            
-                                            if (imageFiles && imageFiles.length > 0) {
-                                                for (const file of imageFiles) {
-                                                    if (file && file.size > 0) {
-                                                        await window.offlineStorage.storeImage(file, reportId);
-                                                    }
+                                        const reportId = await window.offlineStorage.queueReport({
+                                            qrToken: qrToken,
+                                            latitude: latitude || null,
+                                            longitude: longitude || null,
+                                            manualLocation: manualLocation || null,
+                                            helperNote: helperNote || null
+                                        });
+                                        
+                                        if (imageFiles && imageFiles.length > 0) {
+                                            for (const file of imageFiles) {
+                                                if (file && file.size > 0) {
+                                                    await window.offlineStorage.storeImage(file, reportId);
                                                 }
                                             }
-                                            
-                                            if (window.offlineSync) {
-                                                await window.offlineSync.updatePendingCount();
-                                                window.offlineSync.registerBackgroundSync();
-                                            }
-                                            
-                                            console.log('✅ Report also stored offline for email sync when internet returns');
                                         }
-                                    } catch (offlineError) {
-                                        console.warn('⚠️ Could not store offline backup:', offlineError);
+                                        
+                                        if (window.offlineSync) {
+                                            await window.offlineSync.updatePendingCount();
+                                            window.offlineSync.registerBackgroundSync();
+                                        }
+                                        
+                                        console.log('✅ Report also stored offline for email sync when internet returns');
                                     }
-                                }, 500);
-                                
-                                // Reset form after 3 seconds
-                                setTimeout(() => {
-                                    form.reset();
-                                    imagePreviewContainer.innerHTML = '';
-                                    latitudeInput.value = '';
-                                    longitudeInput.value = '';
-                                    selectedLocationDisplay.textContent = '';
-                                    locationStatus.style.display = 'none';
-                                    locationStatus.className = 'location-status info';
-                                    locationStatus.textContent = 'No location selected. Click "Use Current Location" or search for a location.';
-                                    submitBtn.disabled = false;
-                                    submitBtn.textContent = 'Submit Emergency Report';
-                                }, 3000);
-                                
-                                return; // Success - exit
-                            } else {
-                                const errorData = await offlineResponse.json().catch(() => ({ error: 'Server error' }));
-                                throw new Error(errorData.error || `Server error: ${offlineResponse.status}`);
-                            }
-                        } catch (offlineError) {
-                            // Cellular SMS attempt failed - store offline for later
-                            console.warn('⚠️ Cellular SMS failed, storing offline for later sync:', offlineError);
-                            // Fall through to offline storage below
+                                } catch (offlineError) {
+                                    console.warn('⚠️ Could not store offline backup:', offlineError);
+                                }
+                            }, 500);
+                            
+                            // Reset form after 3 seconds
+                            setTimeout(() => {
+                                form.reset();
+                                imagePreviewContainer.innerHTML = '';
+                                latitudeInput.value = '';
+                                longitudeInput.value = '';
+                                selectedLocationDisplay.textContent = '';
+                                locationStatus.style.display = 'none';
+                                locationStatus.className = 'location-status info';
+                                locationStatus.textContent = 'No location selected. Click "Use Current Location" or search for a location.';
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = 'Submit Emergency Report';
+                            }, 3000);
+                            
+                            return; // Success - exit
+                        } else {
+                            const errorData = await offlineResponse.json().catch(() => ({ error: 'Server error' }));
+                            console.error('❌ Server returned error:', errorData);
+                            throw new Error(errorData.error || `Server error: ${offlineResponse.status}`);
                         }
+                    } catch (offlineError) {
+                        // Cellular SMS attempt failed - store offline for later
+                        console.error('❌ Cellular SMS failed:', {
+                            errorName: offlineError.name,
+                            errorMessage: offlineError.message,
+                            stack: offlineError.stack
+                        });
+                        // Fall through to offline storage below
                     }
+                } else {
+                    console.log('⚠️ Skipping cellular SMS attempt:', {
+                        navigatorOnLine: navigator.onLine,
+                        airplaneMode: airplaneMode
+                    });
                 }
                 
                 // STEP 4: No cellular or airplane mode - store offline for later sync
