@@ -297,44 +297,86 @@ let syncListenerRegistered = false;
 // Function to trigger sync when online
 async function triggerSyncOnOnline() {
   console.log('🌐 Online detected - scheduling sync...');
+  console.log('🔍 Checking if offlineStorage is available:', !!window.offlineStorage);
+  console.log('🔍 Checking if offlineSync is available:', !!window.offlineSync);
+  
   // Register background sync
   registerBackgroundSync();
+  
   // Debounce sync to prevent multiple rapid calls
   if (onlineSyncTimeout) {
     clearTimeout(onlineSyncTimeout);
   }
+  
   onlineSyncTimeout = setTimeout(async () => {
     console.log('🔄 Triggering sync after connection restored...');
+    console.log('🔍 navigator.onLine:', navigator.onLine);
+    console.log('🔍 window.offlineStorage.isOnline():', window.offlineStorage ? window.offlineStorage.isOnline() : 'N/A');
+    
     try {
-      const result = await syncAllPendingReports();
-      console.log('✅ Sync completed:', result);
+      // Check pending count first
+      if (window.offlineStorage) {
+        const pendingCount = await window.offlineStorage.getPendingCount();
+        console.log('🔍 Pending reports count:', pendingCount);
+        
+        if (pendingCount > 0) {
+          const result = await syncAllPendingReports();
+          console.log('✅ Sync completed:', result);
+        } else {
+          console.log('✅ No pending reports to sync');
+        }
+      } else {
+        console.error('❌ offlineStorage not available');
+      }
     } catch (error) {
       console.error('❌ Sync failed:', error);
+      console.error('❌ Error stack:', error.stack);
     }
   }, 2000); // Wait 2 seconds after coming online
 }
 
 // Register sync listener - try multiple methods to ensure it works
 function registerSyncListener() {
-  if (syncListenerRegistered) return;
+  if (syncListenerRegistered) {
+    console.log('⚠️ Sync listener already registered, skipping...');
+    return;
+  }
+  
+  console.log('🔧 Registering sync listener...');
+  console.log('🔍 window.offlineStorage available:', !!window.offlineStorage);
   
   // Method 1: Use offlineStorage.onOnlineStatusChange if available
   if (window.offlineStorage && window.offlineStorage.onOnlineStatusChange) {
     syncListenerRegistered = true;
     window.offlineStorage.onOnlineStatusChange(async (isOnline) => {
+      console.log('📡 offlineStorage.onOnlineStatusChange callback fired, isOnline:', isOnline);
       if (isOnline) {
         await triggerSyncOnOnline();
       }
     });
     console.log('✅ Sync listener registered via offlineStorage.onOnlineStatusChange');
+  } else {
+    console.warn('⚠️ offlineStorage.onOnlineStatusChange not available');
   }
   
-  // Method 2: Direct window.addEventListener as fallback
+  // Method 2: Direct window.addEventListener as fallback (always register this)
   window.addEventListener('online', async () => {
-    console.log('🌐 Window online event fired');
+    console.log('🌐 Window online event fired (direct listener)');
     await triggerSyncOnOnline();
   });
   console.log('✅ Sync listener registered via window.addEventListener');
+  
+  // Method 3: Also check periodically if we're online and have pending reports
+  setInterval(async () => {
+    if (navigator.onLine && window.offlineStorage && window.offlineSync) {
+      const pendingCount = await window.offlineStorage.getPendingCount();
+      if (pendingCount > 0) {
+        console.log('🔍 Periodic check: Online with pending reports, triggering sync...');
+        await triggerSyncOnOnline();
+      }
+    }
+  }, 5000); // Check every 5 seconds
+  console.log('✅ Periodic sync checker registered (every 5 seconds)');
 }
 
 // Register immediately if offlineStorage is ready, otherwise wait
@@ -381,4 +423,3 @@ window.offlineSync = {
   initSync,
   registerBackgroundSync
 };
-
