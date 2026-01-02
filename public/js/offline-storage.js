@@ -86,7 +86,9 @@ async function queueReport(reportData) {
 }
 
 // Store an image blob
-async function storeImage(file, reportId) {
+async function storeImage(file, reportId, retryCount = 0) {
+  const maxRetries = 3;
+  
   // Convert file to ArrayBuffer FIRST (before any database operations)
   // This is the slowest part, so do it upfront
   let arrayBuffer;
@@ -107,48 +109,127 @@ async function storeImage(file, reportId) {
     timestamp: Date.now()
   };
 
-  console.log(`💾 Storing image for report ${reportId}: ${imageData.filename} (${arrayBuffer.byteLength} bytes, type: ${imageData.type})`);
+  console.log(`💾 Storing image for report ${reportId}: ${imageData.filename} (${arrayBuffer.byteLength} bytes, type: ${imageData.type})${retryCount > 0 ? ` [Retry ${retryCount}/${maxRetries}]` : ''}`);
 
-  // Get database connection AFTER converting file (minimize time between transaction creation and add)
-  const database = await getDB();
-  
-  // Check database is ready
-  if (!database) {
-    throw new Error('Database not available');
+  try {
+    // Get fresh database connection
+    const database = await getDB();
+    
+    // Verify database is ready
+    if (!database) {
+      throw new Error('Database not available');
+    }
+
+    // Check if database connection is still open
+    if (database.version === null) {
+      // Database connection is closed, reinitialize
+      console.log('🔄 Database connection closed, reinitializing...');
+      db = null;
+      const freshDb = await getDB();
+      if (!freshDb) {
+        throw new Error('Failed to reinitialize database');
+      }
+      // Retry with fresh connection
+      if (retryCount < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 100 * (retryCount + 1)));
+        return storeImage(file, reportId, retryCount + 1);
+      }
+      throw new Error('Database connection failed after retries');
+    }
+
+    // Create transaction and add operation SYNCHRONOUSLY (no async operations between these)
+    // IndexedDB transactions auto-commit when there are no pending operations
+    // So we must create transaction and queue add() in the same synchronous execution
+    const transaction = database.transaction([STORE_IMAGES], 'readwrite');
+    const store = transaction.objectStore(STORE_IMAGES);
+    
+    // Queue add operation IMMEDIATELY (this keeps transaction alive)
+    const request = store.add(imageData);
+
+    // Return promise that resolves when request completes
+    return new Promise((resolve, reject) => {
+      // Set up all handlers immediately
+      request.onsuccess = () => {
+        console.log(`✅ Image stored with ID ${request.result} for report ${reportId}${retryCount > 0 ? ` (after ${retryCount} retry)` : ''}`);
+        resolve(request.result);
+      };
+
+      request.onerror = () => {
+        const error = request.error;
+        console.error(`❌ Error storing image (attempt ${retryCount + 1}):`, error);
+        
+        // If it's a transaction error and we have retries left, retry
+        if (error && error.name === 'TransactionInactiveError' && retryCount < maxRetries) {
+          console.log(`🔄 Retrying image storage (attempt ${retryCount + 2}/${maxRetries + 1})...`);
+          // Reset database connection and retry
+          db = null;
+          setTimeout(async () => {
+            try {
+              const result = await storeImage(file, reportId, retryCount + 1);
+              resolve(result);
+            } catch (retryError) {
+              reject(retryError);
+            }
+          }, 100 * (retryCount + 1));
+        } else {
+          reject(error || new Error('Add operation failed'));
+        }
+      };
+
+      transaction.onerror = (event) => {
+        const error = transaction.error || event || new Error('Transaction failed');
+        console.error(`❌ Transaction error (attempt ${retryCount + 1}):`, error);
+        
+        // Retry on transaction errors
+        if (retryCount < maxRetries) {
+          console.log(`🔄 Retrying image storage (attempt ${retryCount + 2}/${maxRetries + 1})...`);
+          db = null; // Reset connection
+          setTimeout(async () => {
+            try {
+              const result = await storeImage(file, reportId, retryCount + 1);
+              resolve(result);
+            } catch (retryError) {
+              reject(retryError);
+            }
+          }, 100 * (retryCount + 1));
+        } else {
+          reject(error);
+        }
+      };
+
+      transaction.onabort = () => {
+        const error = new Error('Transaction was aborted');
+        console.error(`❌ Transaction aborted (attempt ${retryCount + 1})`);
+        
+        if (retryCount < maxRetries) {
+          console.log(`🔄 Retrying image storage (attempt ${retryCount + 2}/${maxRetries + 1})...`);
+          db = null; // Reset connection
+          setTimeout(async () => {
+            try {
+              const result = await storeImage(file, reportId, retryCount + 1);
+              resolve(result);
+            } catch (retryError) {
+              reject(retryError);
+            }
+          }, 100 * (retryCount + 1));
+        } else {
+          reject(error);
+        }
+      };
+    });
+  } catch (error) {
+    console.error(`❌ Error in storeImage attempt ${retryCount + 1}:`, error);
+    
+    // Retry if we haven't exceeded max retries
+    if (retryCount < maxRetries) {
+      console.log(`🔄 Retrying image storage (attempt ${retryCount + 2}/${maxRetries + 1})...`);
+      db = null; // Reset connection
+      await new Promise(resolve => setTimeout(resolve, 100 * (retryCount + 1)));
+      return storeImage(file, reportId, retryCount + 1);
+    } else {
+      throw error;
+    }
   }
-
-  // Create transaction and add operation SYNCHRONOUSLY (no async operations between these)
-  // IndexedDB transactions auto-commit when there are no pending operations
-  // So we must create transaction and queue add() in the same synchronous execution
-  const transaction = database.transaction([STORE_IMAGES], 'readwrite');
-  const store = transaction.objectStore(STORE_IMAGES);
-  
-  // Queue add operation IMMEDIATELY (this keeps transaction alive)
-  const request = store.add(imageData);
-
-  // Return promise that resolves when request completes
-  return new Promise((resolve, reject) => {
-    // Set up all handlers immediately
-    request.onsuccess = () => {
-      console.log(`✅ Image stored with ID ${request.result} for report ${reportId}`);
-      resolve(request.result);
-    };
-
-    request.onerror = () => {
-      console.error('❌ Error storing image:', request.error);
-      reject(request.error);
-    };
-
-    transaction.onerror = (event) => {
-      console.error('❌ Transaction error:', transaction.error || event);
-      reject(transaction.error || new Error('Transaction failed'));
-    };
-
-    transaction.onabort = () => {
-      console.error('❌ Transaction aborted');
-      reject(new Error('Transaction was aborted'));
-    };
-  });
 }
 
 // Get all pending reports
