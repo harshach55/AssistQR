@@ -87,70 +87,68 @@ async function queueReport(reportData) {
 
 // Store an image blob
 async function storeImage(file, reportId) {
-  try {
-    // Get database connection first (ensure it's ready)
-    const database = await getDB();
-    
-    // Convert file to ArrayBuffer (do this before creating transaction)
-    let arrayBuffer;
-    if (file instanceof File || file instanceof Blob) {
-      arrayBuffer = await file.arrayBuffer();
-    } else if (file instanceof ArrayBuffer) {
-      arrayBuffer = file;
-    } else {
-      throw new Error('Invalid file type');
-    }
+  // Convert file to ArrayBuffer FIRST (before any database operations)
+  // This is the slowest part, so do it upfront
+  let arrayBuffer;
+  if (file instanceof File || file instanceof Blob) {
+    arrayBuffer = await file.arrayBuffer();
+  } else if (file instanceof ArrayBuffer) {
+    arrayBuffer = file;
+  } else {
+    throw new Error('Invalid file type');
+  }
 
-    // Prepare image data
-    const imageData = {
-      reportId: reportId,
-      blob: arrayBuffer,
-      filename: file.name || `image_${Date.now()}.jpg`,
-      type: file.type || 'image/jpeg',
-      timestamp: Date.now()
+  // Prepare image data
+  const imageData = {
+    reportId: reportId,
+    blob: arrayBuffer,
+    filename: file.name || `image_${Date.now()}.jpg`,
+    type: file.type || 'image/jpeg',
+    timestamp: Date.now()
+  };
+
+  console.log(`💾 Storing image for report ${reportId}: ${imageData.filename} (${arrayBuffer.byteLength} bytes, type: ${imageData.type})`);
+
+  // Get database connection AFTER converting file (minimize time between transaction creation and add)
+  const database = await getDB();
+  
+  // Check database is ready
+  if (!database) {
+    throw new Error('Database not available');
+  }
+
+  // Create transaction and add operation SYNCHRONOUSLY (no async operations between these)
+  // IndexedDB transactions auto-commit when there are no pending operations
+  // So we must create transaction and queue add() in the same synchronous execution
+  const transaction = database.transaction([STORE_IMAGES], 'readwrite');
+  const store = transaction.objectStore(STORE_IMAGES);
+  
+  // Queue add operation IMMEDIATELY (this keeps transaction alive)
+  const request = store.add(imageData);
+
+  // Return promise that resolves when request completes
+  return new Promise((resolve, reject) => {
+    // Set up all handlers immediately
+    request.onsuccess = () => {
+      console.log(`✅ Image stored with ID ${request.result} for report ${reportId}`);
+      resolve(request.result);
     };
 
-    console.log(`💾 Storing image for report ${reportId}: ${imageData.filename} (${arrayBuffer.byteLength} bytes, type: ${imageData.type})`);
+    request.onerror = () => {
+      console.error('❌ Error storing image:', request.error);
+      reject(request.error);
+    };
 
-    // Create transaction and add in one synchronous block
-    // This ensures the transaction stays active
-    return new Promise((resolve, reject) => {
-      // Check if database is still open
-      if (!database || database.objectStoreNames.length === 0) {
-        reject(new Error('Database not available'));
-        return;
-      }
+    transaction.onerror = (event) => {
+      console.error('❌ Transaction error:', transaction.error || event);
+      reject(transaction.error || new Error('Transaction failed'));
+    };
 
-      const transaction = database.transaction([STORE_IMAGES], 'readwrite');
-      const store = transaction.objectStore(STORE_IMAGES);
-      
-      // Immediately queue the add operation (don't do anything else between transaction creation and add)
-      const request = store.add(imageData);
-
-      request.onsuccess = () => {
-        console.log(`✅ Image stored with ID ${request.result} for report ${reportId}`);
-        resolve(request.result);
-      };
-
-      request.onerror = () => {
-        console.error('❌ Error storing image:', request.error);
-        reject(request.error);
-      };
-
-      transaction.onerror = () => {
-        console.error('❌ Transaction error:', transaction.error);
-        reject(transaction.error || new Error('Transaction failed'));
-      };
-
-      transaction.onabort = () => {
-        console.error('❌ Transaction aborted');
-        reject(new Error('Transaction was aborted'));
-      };
-    });
-  } catch (error) {
-    console.error('❌ Error in storeImage:', error);
-    throw error;
-  }
+    transaction.onabort = () => {
+      console.error('❌ Transaction aborted');
+      reject(new Error('Transaction was aborted'));
+    };
+  });
 }
 
 // Get all pending reports
