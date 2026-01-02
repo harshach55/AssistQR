@@ -227,65 +227,50 @@ async function getReportImages(reportId) {
           return;
         }
         
-        // Convert ArrayBuffers back to File objects
+        // Convert base64 strings or ArrayBuffers back to File objects
         const files = images.map((img, index) => {
           try {
-            // img.blob should be an ArrayBuffer
-            let arrayBuffer = img.blob;
+            let file;
             
-            // Handle different storage formats
-            if (!arrayBuffer) {
-              console.error(`❌ Image ${index + 1} has no blob data:`, img);
-              return null;
-            }
-            
-            // If it's already an ArrayBuffer, use it directly
-            // If it's stored as something else, try to convert
-            if (!(arrayBuffer instanceof ArrayBuffer)) {
-              // Try to convert if it's a different type
-              if (arrayBuffer instanceof Uint8Array) {
-                arrayBuffer = arrayBuffer.buffer;
-              } else if (typeof arrayBuffer === 'object' && arrayBuffer.byteLength !== undefined) {
-                // Might be a typed array, get the underlying buffer
-                arrayBuffer = arrayBuffer.buffer || arrayBuffer;
-              } else {
-                console.error(`❌ Image ${index + 1} blob is not an ArrayBuffer. Type: ${typeof arrayBuffer}, constructor: ${arrayBuffer?.constructor?.name}`);
+            if (img.base64) {
+              // New format: base64 string (more reliable)
+              console.log(`🔄 Converting image ${index + 1} from base64: ${img.filename}`);
+              file = base64ToFile(img.base64, img.filename || `image_${index + 1}.jpg`, img.type || 'image/jpeg');
+            } else if (img.blob) {
+              // Old format: ArrayBuffer (for backward compatibility)
+              console.log(`🔄 Converting image ${index + 1} from ArrayBuffer: ${img.filename}`);
+              let arrayBuffer = img.blob;
+              
+              // Handle different ArrayBuffer formats
+              if (!(arrayBuffer instanceof ArrayBuffer)) {
+                if (arrayBuffer instanceof Uint8Array) {
+                  arrayBuffer = arrayBuffer.buffer;
+                } else if (typeof arrayBuffer === 'object' && arrayBuffer.byteLength !== undefined) {
+                  arrayBuffer = arrayBuffer.buffer || arrayBuffer;
+                } else {
+                  console.error(`❌ Image ${index + 1} blob is not an ArrayBuffer`);
+                  return null;
+                }
+              }
+              
+              if (!(arrayBuffer instanceof ArrayBuffer) || arrayBuffer.byteLength === 0) {
+                console.error(`❌ Image ${index + 1} ArrayBuffer is invalid or empty`);
                 return null;
               }
-            }
-            
-            // Verify ArrayBuffer has data
-            if (!(arrayBuffer instanceof ArrayBuffer) || arrayBuffer.byteLength === 0) {
-              console.error(`❌ Image ${index + 1} ArrayBuffer is invalid or empty (${arrayBuffer?.byteLength || 0} bytes)`);
+              
+              const blob = new Blob([arrayBuffer], { type: img.type || 'image/jpeg' });
+              file = new File([blob], img.filename || `image_${index + 1}.jpg`, { 
+                type: img.type || 'image/jpeg',
+                lastModified: img.timestamp || Date.now()
+              });
+            } else {
+              console.error(`❌ Image ${index + 1} has no data (no base64 or blob):`, img);
               return null;
             }
             
-            console.log(`🔄 Converting image ${index + 1}: ArrayBuffer size = ${arrayBuffer.byteLength} bytes`);
-            
-            // Create Blob from ArrayBuffer
-            const blob = new Blob([arrayBuffer], { type: img.type || 'image/jpeg' });
-            
-            if (blob.size === 0) {
-              console.error(`❌ Image ${index + 1} Blob has zero size after creation`);
+            if (!file || file.size === 0) {
+              console.error(`❌ Image ${index + 1} File is invalid or empty`);
               return null;
-            }
-            
-            // Create File from Blob (File constructor accepts BlobParts directly)
-            const fileName = img.filename || `image_${index + 1}.jpg`;
-            const fileType = img.type || 'image/jpeg';
-            const file = new File([blob], fileName, { 
-              type: fileType,
-              lastModified: img.timestamp || Date.now()
-            });
-            
-            if (file.size === 0) {
-              console.error(`❌ Image ${index + 1} File has zero size after conversion`);
-              return null;
-            }
-            
-            // Verify sizes match
-            if (file.size !== arrayBuffer.byteLength) {
-              console.warn(`⚠️ Image ${index + 1} size mismatch: ArrayBuffer=${arrayBuffer.byteLength}, File=${file.size}`);
             }
             
             console.log(`✅ Converted image ${index + 1}: ${file.name} (${file.size} bytes, type: ${file.type})`);
