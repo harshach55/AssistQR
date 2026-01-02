@@ -1028,18 +1028,24 @@
                         
                         console.log('✅ Report queued offline with ID:', reportId);
                         
-                        // Store images
+                        // Store images sequentially (one at a time) to avoid transaction conflicts
                         if (imageFiles && imageFiles.length > 0) {
                             console.log(`📷 Storing ${imageFiles.length} image(s) offline...`);
                             let storedCount = 0;
-                            for (const file of imageFiles) {
+                            for (let i = 0; i < imageFiles.length; i++) {
+                                const file = imageFiles[i];
                                 if (file && file.size > 0) {
                                     try {
+                                        // Add small delay between images to ensure transactions complete
+                                        if (i > 0) {
+                                            await new Promise(resolve => setTimeout(resolve, 100));
+                                        }
                                         const imageId = await window.offlineStorage.storeImage(file, reportId);
                                         console.log(`✅ Image stored with ID ${imageId} for report ${reportId}: ${file.name} (${file.size} bytes)`);
                                         storedCount++;
                                     } catch (imgError) {
-                                        console.error('❌ Error storing image:', imgError);
+                                        console.error(`❌ Error storing image ${i + 1}/${imageFiles.length}:`, imgError);
+                                        // Continue with next image even if one fails
                                     }
                                 } else {
                                     console.warn('⚠️ Skipping invalid image file:', file);
