@@ -2,7 +2,7 @@
 // Enables offline functionality for accident reporting form
 // Includes Background Sync API for automatic report syncing
 
-const CACHE_NAME = 'assistqr-v6';
+const CACHE_NAME = 'assistqr-v7';
 
 // Install: Cache resources when Service Worker is installed
 self.addEventListener('install', (event) => {
@@ -115,40 +115,5 @@ self.addEventListener('fetch', (event) => {
         });
       })
     );
-  }
-});
-
-// Background Sync: Handle syncing queued reports
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'sync-reports') {
-    console.log('[SW] Background sync triggered: sync-reports');
-    event.waitUntil(syncQueuedReports());
-  }
-});
-
-// Sync queued reports from IndexedDB
-async function syncQueuedReports() {
-  try {
-    // Get all clients (open tabs)
-    const clients = await self.clients.matchAll();
-    
-    // Send message to clients to trigger sync
-    clients.forEach(client => {
-      client.postMessage({
-        type: 'SYNC_REPORTS',
-        timestamp: Date.now()
-      });
-    });
-    
-    console.log('[SW] ✅ Background sync message sent to clients');
-  } catch (error) {
-    console.error('[SW] ❌ Error in background sync:', error);
-  }
-}
-
-// Listen for messages from clients
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
   }
 });
