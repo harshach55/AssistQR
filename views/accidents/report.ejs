@@ -808,6 +808,12 @@
         // Initial status check
         updateOfflineStatus();
 
+        // Add click handler for Open SMS App button
+        const openSmsBtn = document.getElementById('open-sms-btn');
+        if (openSmsBtn) {
+            openSmsBtn.addEventListener('click', openSMSApp);
+        }
+
         // Enhanced Cellular Network Detection (5G/4G/3G/2G)
         // Note: Laptops/desktops don't have cellular, so be conservative
         function detectCellularNetwork() {
