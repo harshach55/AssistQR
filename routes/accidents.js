@@ -26,7 +26,7 @@ router.post('/report', (req, res, next) => {
         return res.status(400).json({
           success: false,
           error: messages[err.code] || `File upload error: ${err.message || 'Unknown error'}`
-        });
+          });
       }
       return res.status(400).render('error', {
         message: messages[err.code] || `File upload error: ${err.message || 'Unknown error'}`,
@@ -334,8 +334,11 @@ router.post('/report-offline', (req, res, next) => {
 
     // Send SMS ONLY to all emergency contacts (no email - internet is down)
     // Bystander never sees these phone numbers - server handles it
-    console.log('📱 Offline mode: Sending SMS notifications to', vehicle.emergencyContacts.length, 'contact(s)...');
+    console.log('📱 ===== OFFLINE MODE: SENDING SMS NOTIFICATIONS =====');
+    console.log('📱 Emergency contacts count:', vehicle.emergencyContacts.length);
     console.log('📱 Emergency contacts:', vehicle.emergencyContacts.map(c => ({ name: c.name, phone: c.phoneNumber })));
+    console.log('📱 Fast2SMS configured:', !!process.env.FAST2SMS_API_KEY);
+    console.log('📱 Twilio configured:', !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN));
     
     const smsPromises = vehicle.emergencyContacts.map(contact => {
       console.log(`📱 Preparing SMS for ${contact.name} (${contact.phoneNumber})...`);
@@ -345,16 +348,30 @@ router.post('/report-offline', (req, res, next) => {
         lat, lng, imageUrls,
         helperNote: helperNote || null,
         manualLocation: manualLocation || null
+      }).then(result => {
+        console.log(`📱 SMS result for ${contact.name} (${contact.phoneNumber}):`, result);
+        return result;
       }).catch(err => {
         console.error(`❌ Failed to send SMS to ${contact.phoneNumber}:`, err);
+        console.error(`   Error details:`, err.message, err.stack);
         return { success: false, error: err.message };
       });
     });
 
     const smsResults = await Promise.all(smsPromises);
-    console.log('📱 SMS sending results:', smsResults);
-    const successCount = smsResults.filter(r => r.success).length;
-    console.log(`✅ ${successCount}/${vehicle.emergencyContacts.length} SMS notifications sent successfully!`);
+    console.log('📱 ===== SMS SENDING COMPLETE =====');
+    console.log('📱 SMS sending results:', JSON.stringify(smsResults, null, 2));
+    const successCount = smsResults.filter(r => r && r.success).length;
+    const failedCount = smsResults.filter(r => !r || !r.success).length;
+    console.log(`📱 Summary: ${successCount} succeeded, ${failedCount} failed out of ${vehicle.emergencyContacts.length} total`);
+    
+    if (successCount === 0 && vehicle.emergencyContacts.length > 0) {
+      console.error('❌ WARNING: No SMS messages were sent successfully!');
+      console.error('   This might indicate:');
+      console.error('   1. Fast2SMS API key not configured (check FAST2SMS_API_KEY in .env)');
+      console.error('   2. Phone numbers are not Indian numbers (Fast2SMS only works for India)');
+      console.error('   3. Twilio not configured for international numbers');
+    }
 
     // Return JSON response (for offline cellular submissions)
     res.json({
