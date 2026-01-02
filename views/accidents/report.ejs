@@ -1215,5 +1215,132 @@
             }
         });
     </script>
+    
+    <!-- Debug Panel -->
+    <div id="debug-panel">
+        <div id="debug-panel-header">
+            <h3>🔍 Debug Logs</h3>
+            <button id="debug-clear" onclick="clearDebugLogs()">Clear</button>
+        </div>
+        <div id="debug-logs"></div>
+    </div>
+    <button id="debug-toggle" onclick="toggleDebug()">🔍 Debug</button>
+    
+    <script>
+        // Debug Panel Functionality
+        let debugLogs = [];
+        const maxLogs = 100;
+        const debugPanel = document.getElementById('debug-panel');
+        const debugLogsContainer = document.getElementById('debug-logs');
+        let debugEnabled = false;
+        
+        function addDebugLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = {
+                time: timestamp,
+                message: message,
+                type: type
+            };
+            debugLogs.push(logEntry);
+            
+            // Keep only last maxLogs logs
+            if (debugLogs.length > maxLogs) {
+                debugLogs.shift();
+            }
+            
+            if (debugEnabled) {
+                updateDebugPanel();
+            }
+        }
+        
+        function updateDebugPanel() {
+            if (!debugLogsContainer) return;
+            
+            debugLogsContainer.innerHTML = debugLogs.map(log => {
+                const className = log.type;
+                return `<div class="log ${className}">[${log.time}] ${escapeHtml(log.message)}</div>`;
+            }).join('');
+            
+            // Auto-scroll to bottom
+            debugLogsContainer.scrollTop = debugLogsContainer.scrollHeight;
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function toggleDebug() {
+            debugEnabled = !debugEnabled;
+            if (debugEnabled) {
+                debugPanel.classList.add('show');
+                updateDebugPanel();
+                document.getElementById('debug-toggle').textContent = '❌ Close';
+            } else {
+                debugPanel.classList.remove('show');
+                document.getElementById('debug-toggle').textContent = '🔍 Debug';
+            }
+        }
+        
+        function clearDebugLogs() {
+            debugLogs = [];
+            updateDebugPanel();
+        }
+        
+        // Intercept console methods to also log to debug panel
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            const message = args.map(arg => {
+                if (typeof arg === 'object') {
+                    try {
+                        return JSON.stringify(arg, null, 2);
+                    } catch (e) {
+                        return String(arg);
+                    }
+                }
+                return String(arg);
+            }).join(' ');
+            addDebugLog(message, 'info');
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            const message = args.map(arg => {
+                if (typeof arg === 'object') {
+                    try {
+                        return JSON.stringify(arg, null, 2);
+                    } catch (e) {
+                        return String(arg);
+                    }
+                }
+                return String(arg);
+            }).join(' ');
+            addDebugLog(message, 'error');
+        };
+        
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            const message = args.map(arg => {
+                if (typeof arg === 'object') {
+                    try {
+                        return JSON.stringify(arg, null, 2);
+                    } catch (e) {
+                        return String(arg);
+                    }
+                }
+                return String(arg);
+            }).join(' ');
+            addDebugLog(message, 'warn');
+        };
+        
+        // Log initialization
+        addDebugLog('Debug panel initialized', 'info');
+        console.log('✅ Debug panel ready - click "🔍 Debug" button to view logs');
+    </script>
 </body>
 </html>
