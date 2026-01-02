@@ -170,15 +170,7 @@ async function syncAllPendingReports() {
   console.log('🔄 Starting sync (locked)...');
 
   try {
-    const pendingReports = await window.offlineStorage.getPendingReports();
-    
-    if (pendingReports.length === 0) {
-      console.log('✅ No pending reports to sync');
-      return { synced: 0, failed: 0 };
-    }
-
-    // Sync reports one by one to avoid overwhelming the server
-    // Mark as syncing BEFORE getting the list to prevent race conditions
+    // Get pending reports
     const pendingReports = await window.offlineStorage.getPendingReports();
     
     if (pendingReports.length === 0) {
