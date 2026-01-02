@@ -113,12 +113,23 @@ async function syncReport(report) {
     console.log('🚀 Submitting report to server...');
     const response = await fetch('/accidents/report', {
       method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest'  // Indicate this is a programmatic request
+      },
       body: formData
     });
 
     // Log response for debugging
-    const responseText = await response.text();
-    console.log(`📥 Server response: ${response.status} ${response.statusText}`);
+    let responseData;
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      responseData = await response.json();
+      console.log(`📥 Server response: ${response.status} ${response.statusText}`, responseData);
+    } else {
+      const responseText = await response.text();
+      responseData = { text: responseText.substring(0, 200) };
+      console.log(`📥 Server response: ${response.status} ${response.statusText}`, responseData);
+    }
     
     if (response.ok) {
       // Success - remove from queue IMMEDIATELY to prevent duplicate syncs
@@ -128,7 +139,7 @@ async function syncReport(report) {
     } else {
       // Failed - update status
       await window.offlineStorage.updateReportStatus(report.id, 'failed');
-      console.error('❌ Report sync failed:', response.status, responseText.substring(0, 200));
+      console.error('❌ Report sync failed:', response.status, responseData);
       return { success: false, error: `HTTP ${response.status}` };
     }
   } catch (error) {

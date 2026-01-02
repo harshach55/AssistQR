@@ -19,6 +19,15 @@ router.post('/report', (req, res, next) => {
         'LIMIT_FILE_SIZE': 'File too large. Maximum size is 100MB per file.',
         'LIMIT_FILE_COUNT': 'Too many files. Maximum 10 images allowed.'
       };
+      // Check if this is a programmatic request (from sync)
+      const isProgrammatic = req.headers['x-requested-with'] === 'XMLHttpRequest' || 
+                            req.headers['accept']?.includes('application/json');
+      if (isProgrammatic) {
+        return res.status(400).json({
+          success: false,
+          error: messages[err.code] || `File upload error: ${err.message || 'Unknown error'}`
+        });
+      }
       return res.status(400).render('error', {
         message: messages[err.code] || `File upload error: ${err.message || 'Unknown error'}`,
         error: null
@@ -52,12 +61,23 @@ router.post('/report', (req, res, next) => {
   body('helperNote').optional({ checkFalsy: true }).trim().isLength({ max: 1000 })
 ], async (req, res) => {
   try {
+    // Check if this is a programmatic request (from sync)
+    const isProgrammatic = req.headers['x-requested-with'] === 'XMLHttpRequest' || 
+                          req.headers['accept']?.includes('application/json');
+    
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       const relevantErrors = errors.array().filter(err => 
         !['latitude', 'longitude'].includes(err.param) || err.value
       );
       if (relevantErrors.length > 0) {
+        if (isProgrammatic) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid form data',
+            details: relevantErrors
+          });
+        }
         return res.status(400).render('error', {
           message: 'Invalid form data',
           error: relevantErrors
@@ -76,6 +96,12 @@ router.post('/report', (req, res, next) => {
     });
 
     if (!vehicle) {
+      if (isProgrammatic) {
+        return res.status(404).json({
+          success: false,
+          error: 'Invalid QR code. Vehicle not found.'
+        });
+      }
       return res.status(404).render('error', {
         message: 'Invalid QR code. Vehicle not found.',
         error: null
@@ -160,12 +186,33 @@ router.post('/report', (req, res, next) => {
     await Promise.all(notificationPromises);
     console.log('✅ All email notifications sent!');
 
+    // Check if this is a programmatic request (from sync) - return JSON
+    if (isProgrammatic) {
+      return res.json({
+        success: true,
+        message: 'Emergency report received. Emergency contacts have been notified via email.',
+        reportId: accidentReport.id,
+        notificationCount: vehicle.emergencyContacts.length
+      });
+    }
+
+    // Otherwise return HTML for browser form submissions
     res.render('accidents/thankyou', {
       vehicleLicensePlate: vehicle.licensePlate,
       notificationCount: vehicle.emergencyContacts.length
     });
   } catch (error) {
     console.error('Error processing accident report:', error);
+    // Check if this is a programmatic request (from sync)
+    const isProgrammatic = req.headers['x-requested-with'] === 'XMLHttpRequest' || 
+                          req.headers['accept']?.includes('application/json');
+    if (isProgrammatic) {
+      return res.status(500).json({
+        success: false,
+        error: 'Error processing your report. Please try again.',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
     res.status(500).render('error', {
       message: 'Error processing your report. Please try again.',
       error: process.env.NODE_ENV === 'development' ? error : null
@@ -512,4 +559,3 @@ router.post('/sms-webhook', express.raw({ type: 'application/x-www-form-urlencod
 });
 
 module.exports = router;
-
