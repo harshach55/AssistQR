@@ -68,13 +68,6 @@
 
         <!-- Sync Status -->
         <div id="sync-status" class="sync-status" style="margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; display: none;"></div>
-        
-        <!-- Manual Sync Button (shown when there are pending reports) -->
-        <div id="manual-sync-container" style="margin-bottom: 1rem; display: none;">
-            <button id="manual-sync-btn" type="button" style="width: 100%; padding: 0.75rem; background-color: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 1rem;">
-                🔄 Sync Pending Reports Now
-            </button>
-        </div>
 
         <div class="card">
             <div style="margin-bottom: 1.5rem; padding: 1rem; background-color: var(--bg-light); border-radius: 6px;">
@@ -631,98 +624,6 @@
 
         // Initial status check
         updateOfflineStatus();
-        
-        // Manual sync button handler
-        const manualSyncBtn = document.getElementById('manual-sync-btn');
-        const manualSyncContainer = document.getElementById('manual-sync-container');
-        
-        if (manualSyncBtn && window.offlineSync) {
-            manualSyncBtn.addEventListener('click', async () => {
-                manualSyncBtn.disabled = true;
-                manualSyncBtn.textContent = '🔄 Syncing...';
-                
-                try {
-                    console.log('🔄 Manual sync triggered by user...');
-                    const result = await window.offlineSync.syncAllPendingReports();
-                    console.log('✅ Manual sync completed:', result);
-                    
-                    if (result.synced > 0) {
-                        manualSyncBtn.textContent = `✅ ${result.synced} report(s) synced!`;
-                        manualSyncBtn.style.backgroundColor = '#28a745';
-                        setTimeout(() => {
-                            manualSyncBtn.textContent = '🔄 Sync Pending Reports Now';
-                            manualSyncBtn.style.backgroundColor = '#007bff';
-                            manualSyncBtn.disabled = false;
-                            // Hide button if no more pending reports
-                            if (window.offlineSync) {
-                                window.offlineSync.updatePendingCount();
-                            }
-                        }, 3000);
-                    } else if (result.failed > 0) {
-                        manualSyncBtn.textContent = `⚠️ ${result.failed} failed`;
-                        manualSyncBtn.style.backgroundColor = '#dc3545';
-                        setTimeout(() => {
-                            manualSyncBtn.textContent = '🔄 Sync Pending Reports Now';
-                            manualSyncBtn.style.backgroundColor = '#007bff';
-                            manualSyncBtn.disabled = false;
-                        }, 3000);
-                    } else {
-                        manualSyncBtn.textContent = '✅ No pending reports';
-                        manualSyncBtn.style.backgroundColor = '#28a745';
-                        setTimeout(() => {
-                            manualSyncBtn.textContent = '🔄 Sync Pending Reports Now';
-                            manualSyncBtn.style.backgroundColor = '#007bff';
-                            manualSyncBtn.disabled = false;
-                            if (window.offlineSync) {
-                                window.offlineSync.updatePendingCount();
-                            }
-                        }, 2000);
-                    }
-                } catch (error) {
-                    console.error('❌ Manual sync failed:', error);
-                    manualSyncBtn.textContent = '❌ Sync failed - try again';
-                    manualSyncBtn.style.backgroundColor = '#dc3545';
-                    setTimeout(() => {
-                        manualSyncBtn.textContent = '🔄 Sync Pending Reports Now';
-                        manualSyncBtn.style.backgroundColor = '#007bff';
-                        manualSyncBtn.disabled = false;
-                    }, 3000);
-                }
-            });
-        }
-        
-        // Show/hide manual sync button based on pending count
-        if (window.offlineSync && manualSyncContainer) {
-            // Check pending count periodically and show button if there are pending reports
-            setInterval(async () => {
-                if (window.offlineStorage && window.offlineStorage.isOnline()) {
-                    const count = await window.offlineStorage.getPendingCount();
-                    if (count > 0) {
-                        manualSyncContainer.style.display = 'block';
-                    } else {
-                        manualSyncContainer.style.display = 'none';
-                    }
-                } else {
-                    manualSyncContainer.style.display = 'none';
-                }
-            }, 2000);
-            
-            // Also check when pending count is updated
-            const originalUpdatePendingCount = window.offlineSync.updatePendingCount;
-            if (originalUpdatePendingCount) {
-                window.offlineSync.updatePendingCount = async function() {
-                    await originalUpdatePendingCount.call(this);
-                    if (window.offlineStorage && window.offlineStorage.isOnline()) {
-                        const count = await window.offlineStorage.getPendingCount();
-                        if (count > 0) {
-                            manualSyncContainer.style.display = 'block';
-                        } else {
-                            manualSyncContainer.style.display = 'none';
-                        }
-                    }
-                };
-            }
-        }
 
         // Enhanced Cellular Network Detection (5G/4G/3G/2G)
         // Note: Laptops/desktops don't have cellular, so be conservative

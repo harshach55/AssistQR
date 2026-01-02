@@ -294,29 +294,67 @@ function registerBackgroundSync() {
 let onlineSyncTimeout = null;
 let syncListenerRegistered = false;
 
-// Register sync listener only once
-if (!syncListenerRegistered && window.offlineStorage) {
-  syncListenerRegistered = true;
-  window.offlineStorage.onOnlineStatusChange(async (isOnline) => {
-    if (isOnline) {
-      console.log('🌐 Online - scheduling sync...');
-      // Register background sync
-      registerBackgroundSync();
-      // Debounce sync to prevent multiple rapid calls
-      if (onlineSyncTimeout) {
-        clearTimeout(onlineSyncTimeout);
-      }
-      onlineSyncTimeout = setTimeout(async () => {
-        console.log('🔄 Triggering sync after connection restored...');
-        try {
-          const result = await syncAllPendingReports();
-          console.log('✅ Sync completed:', result);
-        } catch (error) {
-          console.error('❌ Sync failed:', error);
-        }
-      }, 2000); // Wait 2 seconds after coming online
+// Function to trigger sync when online
+async function triggerSyncOnOnline() {
+  console.log('🌐 Online detected - scheduling sync...');
+  // Register background sync
+  registerBackgroundSync();
+  // Debounce sync to prevent multiple rapid calls
+  if (onlineSyncTimeout) {
+    clearTimeout(onlineSyncTimeout);
+  }
+  onlineSyncTimeout = setTimeout(async () => {
+    console.log('🔄 Triggering sync after connection restored...');
+    try {
+      const result = await syncAllPendingReports();
+      console.log('✅ Sync completed:', result);
+    } catch (error) {
+      console.error('❌ Sync failed:', error);
     }
+  }, 2000); // Wait 2 seconds after coming online
+}
+
+// Register sync listener - try multiple methods to ensure it works
+function registerSyncListener() {
+  if (syncListenerRegistered) return;
+  
+  // Method 1: Use offlineStorage.onOnlineStatusChange if available
+  if (window.offlineStorage && window.offlineStorage.onOnlineStatusChange) {
+    syncListenerRegistered = true;
+    window.offlineStorage.onOnlineStatusChange(async (isOnline) => {
+      if (isOnline) {
+        await triggerSyncOnOnline();
+      }
+    });
+    console.log('✅ Sync listener registered via offlineStorage.onOnlineStatusChange');
+  }
+  
+  // Method 2: Direct window.addEventListener as fallback
+  window.addEventListener('online', async () => {
+    console.log('🌐 Window online event fired');
+    await triggerSyncOnOnline();
   });
+  console.log('✅ Sync listener registered via window.addEventListener');
+}
+
+// Register immediately if offlineStorage is ready, otherwise wait
+if (window.offlineStorage) {
+  registerSyncListener();
+} else {
+  // Wait for offlineStorage to be ready
+  const checkInterval = setInterval(() => {
+    if (window.offlineStorage) {
+      registerSyncListener();
+      clearInterval(checkInterval);
+    }
+  }, 100);
+  
+  // Also try after a short delay
+  setTimeout(() => {
+    if (!syncListenerRegistered && window.offlineStorage) {
+      registerSyncListener();
+    }
+  }, 1000);
 }
 
 // Also listen for Service Worker messages
