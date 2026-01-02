@@ -789,13 +789,11 @@
                 }
             }
             
-            // Show SMS instructions when offline and Twilio number is configured
+            // Show SMS instructions when Twilio number is configured (always visible)
+            // User can use SMS even when online if they prefer
             if (offlineSmsInstructions) {
-                if (!isOnline) {
-                    offlineSmsInstructions.style.display = 'block';
-                } else {
-                    offlineSmsInstructions.style.display = 'none';
-                }
+                // Always show SMS instructions if number is configured
+                offlineSmsInstructions.style.display = 'block';
             }
         }
 
