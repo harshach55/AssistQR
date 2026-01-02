@@ -377,6 +377,17 @@ function registerSyncListener() {
     }
   }, 5000); // Check every 5 seconds
   console.log('✅ Periodic sync checker registered (every 5 seconds)');
+  
+  // Method 4: Also check immediately if we're already online when listener registers
+  if (navigator.onLine && window.offlineStorage) {
+    setTimeout(async () => {
+      const pendingCount = await window.offlineStorage.getPendingCount();
+      if (pendingCount > 0) {
+        console.log('🔍 Initial check: Already online with pending reports, triggering sync...');
+        await triggerSyncOnOnline();
+      }
+    }, 1000);
+  }
 }
 
 // Register immediately if offlineStorage is ready, otherwise wait
@@ -415,11 +426,32 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// Also trigger sync immediately if page loads and we're already online with pending reports
+window.addEventListener('load', async () => {
+  console.log('📄 Page loaded, checking for pending reports...');
+  if (navigator.onLine && window.offlineStorage) {
+    setTimeout(async () => {
+      try {
+        const pendingCount = await window.offlineStorage.getPendingCount();
+        console.log('🔍 Page load check: Pending reports count:', pendingCount);
+        if (pendingCount > 0) {
+          console.log('🔍 Page load: Online with pending reports, triggering sync...');
+          await triggerSyncOnOnline();
+        }
+      } catch (error) {
+        console.error('❌ Error checking pending reports on page load:', error);
+      }
+    }, 2000); // Wait 2 seconds after page load
+  }
+});
+
 // Export functions
 window.offlineSync = {
   syncReport,
   syncAllPendingReports,
   updatePendingCount,
   initSync,
-  registerBackgroundSync
+  registerBackgroundSync,
+  // Add manual trigger function for debugging
+  triggerSync: triggerSyncOnOnline
 };
