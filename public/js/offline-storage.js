@@ -85,150 +85,95 @@ async function queueReport(reportData) {
   }
 }
 
-// Store an image blob
-async function storeImage(file, reportId, retryCount = 0) {
-  const maxRetries = 3;
-  
-  // Convert file to ArrayBuffer FIRST (before any database operations)
-  // This is the slowest part, so do it upfront
-  let arrayBuffer;
-  if (file instanceof File || file instanceof Blob) {
-    arrayBuffer = await file.arrayBuffer();
-  } else if (file instanceof ArrayBuffer) {
-    arrayBuffer = file;
-  } else {
-    throw new Error('Invalid file type');
+// Helper function to convert File/Blob to base64 string
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // Remove data URL prefix (e.g., "data:image/png;base64,")
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Helper function to convert base64 string back to File
+function base64ToFile(base64String, filename, mimeType) {
+  // Convert base64 to binary string
+  const binaryString = atob(base64String);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
   }
+  const blob = new Blob([bytes], { type: mimeType });
+  return new File([blob], filename, { type: mimeType });
+}
 
-  // Prepare image data
-  const imageData = {
-    reportId: reportId,
-    blob: arrayBuffer,
-    filename: file.name || `image_${Date.now()}.jpg`,
-    type: file.type || 'image/jpeg',
-    timestamp: Date.now()
-  };
-
-  console.log(`💾 Storing image for report ${reportId}: ${imageData.filename} (${arrayBuffer.byteLength} bytes, type: ${imageData.type})${retryCount > 0 ? ` [Retry ${retryCount}/${maxRetries}]` : ''}`);
-
+// Store an image blob (using base64 for reliability)
+async function storeImage(file, reportId) {
   try {
-    // Get fresh database connection
+    // Convert file to base64 string (more reliable than ArrayBuffer in IndexedDB)
+    let base64String;
+    if (file instanceof File || file instanceof Blob) {
+      base64String = await fileToBase64(file);
+    } else {
+      throw new Error('Invalid file type');
+    }
+
+    // Prepare image data (store as base64 string instead of ArrayBuffer)
+    const imageData = {
+      reportId: reportId,
+      base64: base64String, // Store as base64 string (more reliable)
+      filename: file.name || `image_${Date.now()}.jpg`,
+      type: file.type || 'image/jpeg',
+      timestamp: Date.now()
+    };
+
+    const originalSize = file.size || 0;
+    const base64Size = base64String.length;
+    console.log(`💾 Storing image for report ${reportId}: ${imageData.filename} (${originalSize} bytes original, ${base64Size} chars base64, type: ${imageData.type})`);
+
+    // Get database connection
     const database = await getDB();
     
-    // Verify database is ready
     if (!database) {
       throw new Error('Database not available');
     }
 
-    // Check if database connection is still open
-    if (database.version === null) {
-      // Database connection is closed, reinitialize
-      console.log('🔄 Database connection closed, reinitializing...');
-      db = null;
-      const freshDb = await getDB();
-      if (!freshDb) {
-        throw new Error('Failed to reinitialize database');
-      }
-      // Retry with fresh connection
-      if (retryCount < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 100 * (retryCount + 1)));
-        return storeImage(file, reportId, retryCount + 1);
-      }
-      throw new Error('Database connection failed after retries');
-    }
-
-    // Create transaction and add operation SYNCHRONOUSLY (no async operations between these)
-    // IndexedDB transactions auto-commit when there are no pending operations
-    // So we must create transaction and queue add() in the same synchronous execution
+    // Create transaction and add operation
     const transaction = database.transaction([STORE_IMAGES], 'readwrite');
     const store = transaction.objectStore(STORE_IMAGES);
     
-    // Queue add operation IMMEDIATELY (this keeps transaction alive)
+    // Queue add operation
     const request = store.add(imageData);
 
     // Return promise that resolves when request completes
     return new Promise((resolve, reject) => {
-      // Set up all handlers immediately
       request.onsuccess = () => {
-        console.log(`✅ Image stored with ID ${request.result} for report ${reportId}${retryCount > 0 ? ` (after ${retryCount} retry)` : ''}`);
+        console.log(`✅ Image stored with ID ${request.result} for report ${reportId}`);
         resolve(request.result);
       };
 
       request.onerror = () => {
-        const error = request.error;
-        console.error(`❌ Error storing image (attempt ${retryCount + 1}):`, error);
-        
-        // If it's a transaction error and we have retries left, retry
-        if (error && error.name === 'TransactionInactiveError' && retryCount < maxRetries) {
-          console.log(`🔄 Retrying image storage (attempt ${retryCount + 2}/${maxRetries + 1})...`);
-          // Reset database connection and retry
-          db = null;
-          setTimeout(async () => {
-            try {
-              const result = await storeImage(file, reportId, retryCount + 1);
-              resolve(result);
-            } catch (retryError) {
-              reject(retryError);
-            }
-          }, 100 * (retryCount + 1));
-        } else {
-          reject(error || new Error('Add operation failed'));
-        }
+        console.error('❌ Error storing image:', request.error);
+        reject(request.error || new Error('Add operation failed'));
       };
 
       transaction.onerror = (event) => {
-        const error = transaction.error || event || new Error('Transaction failed');
-        console.error(`❌ Transaction error (attempt ${retryCount + 1}):`, error);
-        
-        // Retry on transaction errors
-        if (retryCount < maxRetries) {
-          console.log(`🔄 Retrying image storage (attempt ${retryCount + 2}/${maxRetries + 1})...`);
-          db = null; // Reset connection
-          setTimeout(async () => {
-            try {
-              const result = await storeImage(file, reportId, retryCount + 1);
-              resolve(result);
-            } catch (retryError) {
-              reject(retryError);
-            }
-          }, 100 * (retryCount + 1));
-        } else {
-          reject(error);
-        }
+        console.error('❌ Transaction error:', transaction.error || event);
+        reject(transaction.error || new Error('Transaction failed'));
       };
 
       transaction.onabort = () => {
-        const error = new Error('Transaction was aborted');
-        console.error(`❌ Transaction aborted (attempt ${retryCount + 1})`);
-        
-        if (retryCount < maxRetries) {
-          console.log(`🔄 Retrying image storage (attempt ${retryCount + 2}/${maxRetries + 1})...`);
-          db = null; // Reset connection
-          setTimeout(async () => {
-            try {
-              const result = await storeImage(file, reportId, retryCount + 1);
-              resolve(result);
-            } catch (retryError) {
-              reject(retryError);
-            }
-          }, 100 * (retryCount + 1));
-        } else {
-          reject(error);
-        }
+        console.error('❌ Transaction aborted');
+        reject(new Error('Transaction was aborted'));
       };
     });
   } catch (error) {
-    console.error(`❌ Error in storeImage attempt ${retryCount + 1}:`, error);
-    
-    // Retry if we haven't exceeded max retries
-    if (retryCount < maxRetries) {
-      console.log(`🔄 Retrying image storage (attempt ${retryCount + 2}/${maxRetries + 1})...`);
-      db = null; // Reset connection
-      await new Promise(resolve => setTimeout(resolve, 100 * (retryCount + 1)));
-      return storeImage(file, reportId, retryCount + 1);
-    } else {
-      throw error;
-    }
+    console.error('❌ Error in storeImage:', error);
+    throw error;
   }
 }
 
