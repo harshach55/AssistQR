@@ -391,9 +391,10 @@ router.post('/report-offline', (req, res, next) => {
 
 // SMS Webhook: Receives SMS from bystanders when offline
 // Twilio sends POST requests to this endpoint when SMS is received
-router.post('/sms-webhook', express.raw({ type: 'application/x-www-form-urlencoded' }), async (req, res) => {
+router.post('/sms-webhook', express.urlencoded({ extended: false }), async (req, res) => {
   try {
     // Parse incoming SMS data from Twilio
+    // Twilio sends form-urlencoded data: From, Body, To
     const { From, Body, To } = req.body;
     
     console.log('📱 Received SMS from:', From);

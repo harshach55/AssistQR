@@ -46,7 +46,8 @@ router.get('/help', async (req, res) => {
       },
       qrToken,
       googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || null,
-      smsServiceNumber: process.env.TWILIO_FROM_NUMBER || process.env.SMS_SERVICE_NUMBER || null
+      smsServiceNumber: process.env.TWILIO_FROM_NUMBER || process.env.SMS_SERVICE_NUMBER || null,
+      twilioSmsNumber: process.env.TWILIO_SMS_NUMBER || process.env.TWILIO_FROM_NUMBER || null
     });
   } catch (error) {
     console.error('Error loading help page:', error);

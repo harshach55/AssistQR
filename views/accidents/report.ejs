@@ -150,6 +150,34 @@
             </div>
         </div>
 
+        <!-- Offline SMS Instructions (shown when offline and Twilio number is configured) -->
+        <% if (twilioSmsNumber) { %>
+        <div id="offline-sms-instructions" class="card" style="margin-bottom: 1rem; display: none; background-color: #d1ecf1; border: 1px solid #0c5460;">
+            <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
+                <span style="font-size: 1.5rem;">📱</span>
+                <div style="flex: 1;">
+                    <strong style="color: #0c5460; display: block; margin-bottom: 0.5rem;">Send SMS for Immediate Alert</strong>
+                    <p style="margin: 0.25rem 0 0.5rem 0; font-size: 0.875rem; color: #0c5460;">
+                        When offline, send SMS to notify emergency contacts immediately (no internet needed):
+                    </p>
+                    <div style="background: white; padding: 0.75rem; border-radius: 6px; margin: 0.5rem 0; font-family: monospace; font-size: 0.9rem; word-break: break-all;">
+                        <div style="margin-bottom: 0.25rem;"><strong>Send to:</strong> <span id="twilio-number-display"><%= twilioSmsNumber %></span></div>
+                        <div style="margin-bottom: 0.25rem;"><strong>Format:</strong> <span id="sms-format-display">REPORT [TOKEN] [LOCATION] [NOTE]</span></div>
+                        <div style="font-size: 0.8rem; color: #666; margin-top: 0.5rem;">
+                            Example: REPORT <span id="sms-example-token"><%= qrToken %></span> LOCATION Palakollu
+                        </div>
+                    </div>
+                    <button type="button" id="open-sms-btn" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem;">
+                        📱 Open SMS App
+                    </button>
+                    <p style="margin: 0.5rem 0 0 0; font-size: 0.75rem; color: #666;">
+                        Standard SMS charges apply (usually ₹0.50-₹1 per SMS, or free with SMS pack)
+                    </p>
+                </div>
+            </div>
+        </div>
+        <% } %>
+
         <!-- Sync Status -->
         <div id="sync-status" class="sync-status" style="margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; display: none;"></div>
 
@@ -677,10 +705,72 @@
             console.log('⚠️ Service Worker not supported in this browser');
         }
 
+        // Build SMS message for offline reporting
+        function buildSMSMessage() {
+            const qrToken = document.querySelector('input[name="qrToken"]').value;
+            const lat = latitudeInput.value;
+            const lng = longitudeInput.value;
+            const manualLocation = document.getElementById('manualLocation').value.trim();
+            const helperNote = document.getElementById('helperNote').value.trim();
+            
+            // Start with REPORT command and token
+            let smsMessage = `REPORT ${qrToken}`;
+            
+            // Add location (coordinates or manual location)
+            if (lat && lng) {
+                smsMessage += ` ${lat} ${lng}`;
+            } else if (manualLocation) {
+                // Truncate location to fit SMS (160 char limit)
+                const maxLocationLength = 50;
+                const locationText = manualLocation.length > maxLocationLength 
+                    ? manualLocation.substring(0, maxLocationLength) 
+                    : manualLocation;
+                smsMessage += ` LOCATION ${locationText}`;
+            }
+            
+            // Add note if present
+            if (helperNote) {
+                // Calculate remaining space (reserve space for " NOTE " prefix)
+                const remainingChars = 160 - smsMessage.length - 6;
+                if (remainingChars > 0) {
+                    const noteText = helperNote.length > remainingChars 
+                        ? helperNote.substring(0, remainingChars - 3) + '...' 
+                        : helperNote;
+                    smsMessage += ` NOTE ${noteText}`;
+                }
+            }
+            
+            // Ensure message is within SMS limits (160 characters)
+            if (smsMessage.length > 160) {
+                smsMessage = smsMessage.substring(0, 157) + '...';
+            }
+            
+            return smsMessage;
+        }
+
+        // Open native SMS app with pre-filled message
+        function openSMSApp() {
+            const twilioNumber = '<%= twilioSmsNumber || "" %>';
+            if (!twilioNumber) {
+                alert('⚠️ SMS number not configured. Please contact support.');
+                return;
+            }
+            
+            const smsMessage = buildSMSMessage();
+            const smsUrl = `sms:${twilioNumber}?body=${encodeURIComponent(smsMessage)}`;
+            
+            // Try to open SMS app
+            window.location.href = smsUrl;
+            
+            // Show confirmation
+            console.log('📱 Opening SMS app with message:', smsMessage);
+        }
+
         // Update offline status indicator
         function updateOfflineStatus() {
             const offlineStatus = document.getElementById('offline-status');
             const offlineLocationNote = document.getElementById('offline-location-note');
+            const offlineSmsInstructions = document.getElementById('offline-sms-instructions');
             const isOnline = window.offlineStorage && window.offlineStorage.isOnline ? window.offlineStorage.isOnline() : navigator.onLine;
             
             if (offlineStatus) {
@@ -696,6 +786,15 @@
                     offlineLocationNote.style.display = 'block';
                 } else {
                     offlineLocationNote.style.display = 'none';
+                }
+            }
+            
+            // Show SMS instructions when offline and Twilio number is configured
+            if (offlineSmsInstructions) {
+                if (!isOnline) {
+                    offlineSmsInstructions.style.display = 'block';
+                } else {
+                    offlineSmsInstructions.style.display = 'none';
                 }
             }
         }
