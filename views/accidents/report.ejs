@@ -760,14 +760,29 @@
         function isInAirplaneMode() {
             // Only consider it airplane mode if:
             // 1. navigator.onLine is false AND
-            // 2. Connection API explicitly says 'none' (not just unavailable)
-            // This is more lenient - if we can't detect, assume NOT in airplane mode (try SMS)
+            // 2. Connection API explicitly says 'none' AND
+            // 3. No cellular network is detected (4g/3g/2g)
+            // If cellular is available (4g/3g/2g), it's NOT airplane mode even if connection.type is 'none'
             if (!navigator.onLine) {
                 const connection = navigator.connection || 
                                   navigator.mozConnection || 
                                   navigator.webkitConnection;
-                // Only return true if connection API exists AND explicitly says 'none'
-                // If connection API doesn't exist, assume NOT airplane mode (cellular might work)
+                
+                // Check if cellular is actually available
+                const cellularInfo = detectCellularNetwork();
+                const hasCellular = cellularInfo.available === true || 
+                                   cellularInfo.type === '4g' || 
+                                   cellularInfo.type === '3g' || 
+                                   cellularInfo.type === '2g' ||
+                                   cellularInfo.type === '5g';
+                
+                // If cellular is available, it's NOT airplane mode
+                if (hasCellular) {
+                    return false;
+                }
+                
+                // Only return true if connection API exists AND explicitly says 'none' AND no cellular
+                // If connection API doesn't exist, assume NOT in airplane mode (cellular might work)
                 return connection && connection.type === 'none';
             }
             return false;
