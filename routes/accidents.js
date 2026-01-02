@@ -390,43 +390,93 @@ router.post('/report-offline', (req, res, next) => {
 });
 
 // SMS Webhook: Receives SMS from bystanders when offline
-// Twilio sends POST requests to this endpoint when SMS is received
-router.post('/sms-webhook', express.urlencoded({ extended: false }), async (req, res) => {
+// Supports both Twilio and Telerivet webhook formats
+router.post('/sms-webhook', express.urlencoded({ extended: false }), express.json(), async (req, res) => {
   try {
-    // Parse incoming SMS data from Twilio
-    // Twilio sends form-urlencoded data: From, Body, To
-    const { From, Body, To } = req.body;
+    // Detect webhook format (Twilio or Telerivet)
+    // Twilio sends: From, Body, To (form-urlencoded)
+    // Telerivet sends: event, from_number, content, phone_id (JSON or form-urlencoded)
+    let fromNumber, messageBody, toNumber, webhookSource;
     
-    console.log('📱 Received SMS from:', From);
-    console.log('📱 SMS body:', Body);
-    console.log('📱 To number:', To);
+    if (req.body.From && req.body.Body) {
+      // Twilio format
+      webhookSource = 'Twilio';
+      fromNumber = req.body.From;
+      messageBody = req.body.Body;
+      toNumber = req.body.To;
+    } else if (req.body.from_number && req.body.content) {
+      // Telerivet format
+      webhookSource = 'Telerivet';
+      fromNumber = req.body.from_number;
+      messageBody = req.body.content;
+      toNumber = req.body.phone_id || req.body.to_number;
+    } else if (req.body.event === 'incoming_message' || req.body.event === 'message_received') {
+      // Telerivet format (alternative)
+      webhookSource = 'Telerivet';
+      fromNumber = req.body.from_number || req.body.from;
+      messageBody = req.body.content || req.body.message || req.body.body;
+      toNumber = req.body.phone_id || req.body.to_number || req.body.to;
+    } else {
+      // Unknown format - log and try to extract
+      console.log('⚠️ Unknown webhook format. Request body:', JSON.stringify(req.body));
+      webhookSource = 'Unknown';
+      // Try to extract common fields
+      fromNumber = req.body.from_number || req.body.From || req.body.from;
+      messageBody = req.body.content || req.body.Body || req.body.body || req.body.message;
+      toNumber = req.body.phone_id || req.body.To || req.body.to_number || req.body.to;
+    }
+    
+    console.log(`📱 ===== SMS WEBHOOK RECEIVED (${webhookSource}) =====`);
+    console.log('📱 From:', fromNumber);
+    console.log('📱 Message:', messageBody);
+    console.log('📱 To:', toNumber);
+    console.log('📱 Full request body:', JSON.stringify(req.body));
+    
+    if (!messageBody) {
+      console.error('❌ No message body found in webhook');
+      return res.status(400).json({ error: 'No message body found' });
+    }
     
     // Parse SMS message format: "REPORT [TOKEN] [LAT] [LNG] [NOTE]"
-    const parts = Body.trim().split(/\s+/);
+    const parts = messageBody.trim().split(/\s+/);
     
     // Check if message starts with "REPORT"
     if (parts[0] !== 'REPORT') {
       console.error('❌ Invalid SMS format. Expected "REPORT" command.');
-      res.type('text/xml');
-      return res.send(`
-        <?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-          <Message>Invalid format. Expected: REPORT [TOKEN] [LAT] [LNG] [NOTE]</Message>
-        </Response>
-      `);
+      // Return appropriate response format based on webhook source
+      if (webhookSource === 'Telerivet') {
+        return res.status(400).json({ 
+          error: 'Invalid format. Expected: REPORT [TOKEN] [LOCATION] [NOTE]' 
+        });
+      } else {
+        // Twilio format (XML)
+        res.type('text/xml');
+        return res.send(`
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Response>
+            <Message>Invalid format. Expected: REPORT [TOKEN] [LOCATION] [NOTE]</Message>
+          </Response>
+        `);
+      }
     }
     
     // Extract QR token (second part)
     const qrToken = parts[1];
     if (!qrToken) {
       console.error('❌ Missing QR token in SMS');
-      res.type('text/xml');
-      return res.send(`
-        <?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-          <Message>Missing vehicle token. Please include token after REPORT.</Message>
-        </Response>
-      `);
+      if (webhookSource === 'Telerivet') {
+        return res.status(400).json({ 
+          error: 'Missing vehicle token. Please include token after REPORT.' 
+        });
+      } else {
+        res.type('text/xml');
+        return res.send(`
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Response>
+            <Message>Missing vehicle token. Please include token after REPORT.</Message>
+          </Response>
+        `);
+      }
     }
     
     // Extract location and note
@@ -486,25 +536,37 @@ router.post('/sms-webhook', express.urlencoded({ extended: false }), async (req,
     // Check if vehicle exists
     if (!vehicle) {
       console.error('❌ Vehicle not found for token:', qrToken);
-      res.type('text/xml');
-      return res.send(`
-        <?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-          <Message>Vehicle not found. Invalid QR code token.</Message>
-        </Response>
-      `);
+      if (webhookSource === 'Telerivet') {
+        return res.status(404).json({ 
+          error: 'Vehicle not found. Invalid QR code token.' 
+        });
+      } else {
+        res.type('text/xml');
+        return res.send(`
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Response>
+            <Message>Vehicle not found. Invalid QR code token.</Message>
+          </Response>
+        `);
+      }
     }
     
     // Check if vehicle has emergency contacts
     if (!vehicle.emergencyContacts || vehicle.emergencyContacts.length === 0) {
       console.error('❌ No emergency contacts for vehicle:', vehicle.licensePlate);
-      res.type('text/xml');
-      return res.send(`
-        <?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-          <Message>No emergency contacts configured for this vehicle.</Message>
-        </Response>
-      `);
+      if (webhookSource === 'Telerivet') {
+        return res.status(400).json({ 
+          error: 'No emergency contacts configured for this vehicle.' 
+        });
+      } else {
+        res.type('text/xml');
+        return res.send(`
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Response>
+            <Message>No emergency contacts configured for this vehicle.</Message>
+          </Response>
+        `);
+      }
     }
     
     // Save accident report to database
@@ -556,23 +618,46 @@ router.post('/sms-webhook', express.urlencoded({ extended: false }), async (req,
     const successCount = results.filter(r => r.success).length;
     console.log(`✅ Sent SMS to ${successCount}/${vehicle.emergencyContacts.length} emergency contacts`);
     
-    // Send response to Twilio (required)
-    res.type('text/xml');
-    res.send(`
-      <?xml version="1.0" encoding="UTF-8"?>
-      <Response>
-        <Message>Emergency report received. Emergency contacts have been notified.</Message>
-      </Response>
-    `);
+    // Send appropriate response based on webhook source
+    if (webhookSource === 'Telerivet') {
+      // Telerivet expects JSON response
+      return res.json({ 
+        success: true,
+        message: 'Emergency report received. Emergency contacts have been notified.',
+        reportId: accidentReport.id,
+        contactsNotified: successCount
+      });
+    } else {
+      // Twilio expects XML response
+      res.type('text/xml');
+      return res.send(`
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+          <Message>Emergency report received. Emergency contacts have been notified.</Message>
+        </Response>
+      `);
+    }
   } catch (error) {
     console.error('❌ Error processing SMS webhook:', error);
-    res.type('text/xml');
-    res.send(`
-      <?xml version="1.0" encoding="UTF-8"?>
-      <Response>
-        <Message>Error processing report. Please try again later.</Message>
-      </Response>
-    `);
+    console.error('   Error stack:', error.stack);
+    
+    // Detect webhook source for error response
+    const isTelerivet = req.body.from_number || req.body.content || req.body.event === 'incoming_message';
+    
+    if (isTelerivet) {
+      return res.status(500).json({ 
+        error: 'Error processing report. Please try again later.',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    } else {
+      res.type('text/xml');
+      return res.send(`
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+          <Message>Error processing report. Please try again later.</Message>
+        </Response>
+      `);
+    }
   }
 });
 
