@@ -869,11 +869,21 @@
                 
                 // Network error - check if we can use SMS via cellular
                 // Only try cellular SMS on mobile devices (laptops don't have cellular)
-                // Be lenient: if mobile device and not explicitly in airplane mode, try SMS
-                if (!navigator.onLine && !airplaneMode && cellularInfo.isMobileDevice) {
+                // Be VERY lenient: if mobile device and offline, try SMS (unless explicitly in airplane mode)
+                console.log('🔍 Checking if SMS should be attempted...');
+                console.log(`   navigator.onLine: ${navigator.onLine}`);
+                console.log(`   airplaneMode: ${airplaneMode}`);
+                console.log(`   isMobileDevice: ${cellularInfo.isMobileDevice}`);
+                console.log(`   Full cellularInfo:`, cellularInfo);
+                
+                // Try SMS if: mobile device AND offline AND not explicitly in airplane mode
+                const shouldTrySMS = !navigator.onLine && !airplaneMode && cellularInfo.isMobileDevice;
+                console.log(`   shouldTrySMS: ${shouldTrySMS}`);
+                
+                if (shouldTrySMS) {
                     // Only try cellular SMS on mobile devices
                     // Laptops/desktops don't have cellular modems
-                    console.log(`📴 Offline detected (mobile device, not airplane mode) - attempting to send SMS via cellular network...`);
+                    console.log(`📴 ===== ATTEMPTING SMS VIA CELLULAR NETWORK =====`);
                     console.log(`   Device: ${cellularInfo.isMobileDevice ? 'Mobile' : 'Desktop/Laptop'}`);
                     console.log(`   Airplane mode: ${airplaneMode}`);
                     console.log(`   Cellular detection: available=${cellularInfo.available}, type=${cellularInfo.type}, connectionType=${cellularInfo.connectionType}`);
@@ -886,7 +896,15 @@
                     try {
                         // Try to send to offline endpoint (SMS only, no email)
                         // Server will send SMS directly to emergency contacts (bystander never sees them)
-                        console.log('📤 Attempting POST to /accidents/report-offline...');
+                        console.log('📤 ===== POSTING TO /accidents/report-offline =====');
+                        console.log('📤 FormData contents:', {
+                            qrToken: formData.get('qrToken'),
+                            latitude: formData.get('latitude'),
+                            longitude: formData.get('longitude'),
+                            manualLocation: formData.get('manualLocation'),
+                            helperNote: formData.get('helperNote'),
+                            imageCount: formData.getAll('images').length
+                        });
                         const offlineResponse = await fetch('/accidents/report-offline', {
                             method: 'POST',
                             body: formData,
@@ -990,14 +1008,17 @@
                     const reason = !cellularInfo.isMobileDevice ? 'Not a mobile device (laptops/desktops don\'t have cellular)' : 
                                   airplaneMode ? 'Airplane mode detected' : 
                                   navigator.onLine ? 'Device is online' : 'Unknown reason';
-                    console.log('⚠️ Skipping cellular SMS attempt:', {
+                    console.log('⚠️ ===== SKIPPING CELLULAR SMS ATTEMPT =====');
+                    console.log('⚠️ Reason:', reason);
+                    console.log('⚠️ Details:', {
                         navigatorOnLine: navigator.onLine,
                         airplaneMode: airplaneMode,
                         isMobileDevice: cellularInfo.isMobileDevice,
                         cellularAvailable: cellularInfo.available,
-                        reason: reason
+                        cellularType: cellularInfo.type,
+                        connectionType: cellularInfo.connectionType
                     });
-                    console.log('   This means SMS will NOT be sent. Report will only be stored offline for email sync.');
+                    console.log('⚠️ This means SMS will NOT be sent. Report will only be stored offline for email sync.');
                 }
                 
                 // STEP 4: No cellular or airplane mode - store offline for later sync
