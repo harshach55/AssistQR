@@ -88,11 +88,8 @@ async function queueReport(reportData) {
 // Store an image blob
 async function storeImage(file, reportId) {
   try {
-    const database = await getDB();
-    const transaction = database.transaction([STORE_IMAGES], 'readwrite');
-    const store = transaction.objectStore(STORE_IMAGES);
-
-    // Convert file to ArrayBuffer for storage
+    // Convert file to ArrayBuffer FIRST (before opening transaction)
+    // This ensures the transaction stays active during the add operation
     let arrayBuffer;
     if (file instanceof File || file instanceof Blob) {
       arrayBuffer = await file.arrayBuffer();
@@ -101,6 +98,11 @@ async function storeImage(file, reportId) {
     } else {
       throw new Error('Invalid file type');
     }
+
+    // Now open the transaction AFTER we have the arrayBuffer
+    const database = await getDB();
+    const transaction = database.transaction([STORE_IMAGES], 'readwrite');
+    const store = transaction.objectStore(STORE_IMAGES);
 
     const imageData = {
       reportId: reportId,
@@ -122,6 +124,14 @@ async function storeImage(file, reportId) {
       request.onerror = () => {
         console.error('❌ Error storing image:', request.error);
         reject(request.error);
+      };
+      // Also handle transaction completion to catch any errors
+      transaction.oncomplete = () => {
+        // Transaction completed successfully
+      };
+      transaction.onerror = () => {
+        console.error('❌ Transaction error:', transaction.error);
+        reject(transaction.error);
       };
     });
   } catch (error) {

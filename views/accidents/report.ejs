@@ -278,7 +278,7 @@
             // Only show status if we're actually requesting
             setTimeout(() => {
                 if (navigator.geolocation) {
-                    requestLocation();
+            requestLocation();
                 } else {
                     // Geolocation not supported - hide status, user can use search
                     locationStatus.style.display = 'none';
@@ -394,8 +394,8 @@
                         console.error('Location search error:', error);
                         // Only show error if online (offline errors are expected)
                         if (isOnline) {
-                            locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--danger-color);">Error searching locations. Please try again.</div>';
-                            locationSuggestions.style.display = 'block';
+                        locationSuggestions.innerHTML = '<div style="padding: 1rem; color: var(--danger-color);">Error searching locations. Please try again.</div>';
+                        locationSuggestions.style.display = 'block';
                         }
                     }
                 }, 500);
@@ -438,7 +438,7 @@
                     });
                     
                     console.log('✅ Google Maps Places Autocomplete initialized');
-                } catch (error) {
+                    } catch (error) {
                     console.error('Error initializing Google Maps Autocomplete:', error);
                     // Fallback to OpenStreetMap
                     initOpenStreetMapSearch();
@@ -626,30 +626,49 @@
         updateOfflineStatus();
 
         // Enhanced Cellular Network Detection (5G/4G/3G/2G)
+        // Note: Laptops/desktops don't have cellular, so be conservative
         function detectCellularNetwork() {
+            // Check if device is likely mobile (has cellular capability)
+            const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                                   ('ontouchstart' in window) ||
+                                   (navigator.maxTouchPoints > 0);
+            
             const connection = navigator.connection || 
                               navigator.mozConnection || 
                               navigator.webkitConnection;
             
             if (!connection) {
-                // Fallback: if we can't detect, assume cellular might be available
-                // when navigator.onLine is false but device has cellular capability
-                return { available: null, type: 'unknown' };
+                // If we can't detect connection and it's a mobile device, assume cellular might be available
+                // For laptops/desktops, assume no cellular
+                return { 
+                    available: isMobileDevice ? null : false, 
+                    type: 'unknown',
+                    isMobileDevice: isMobileDevice
+                };
             }
             
             const networkType = connection.effectiveType || connection.type;
-            const isCellular = networkType === 'cellular' || 
-                              networkType === '2g' || 
-                              networkType === '3g' || 
-                              networkType === '4g' ||
-                              networkType === '5g' ||
-                              connection.type === 'cellular';
+            const connectionType = connection.type; // 'wifi', 'cellular', 'ethernet', etc.
+            
+            // Only consider it cellular if:
+            // 1. connection.type explicitly says 'cellular', OR
+            // 2. It's a mobile device AND networkType suggests cellular (2g/3g/4g/5g)
+            // Don't trust networkType alone on laptops (they might report "4g" from last WiFi connection)
+            const isCellular = connectionType === 'cellular' || 
+                              (isMobileDevice && (
+                                  networkType === '2g' || 
+                                  networkType === '3g' || 
+                                  networkType === '4g' ||
+                                  networkType === '5g'
+                              ));
             
             return {
                 available: isCellular,
                 type: networkType,
+                connectionType: connectionType,
                 downlink: connection.downlink,
-                rtt: connection.rtt
+                rtt: connection.rtt,
+                isMobileDevice: isMobileDevice
             };
         }
 
@@ -757,12 +776,12 @@
                 }
             } else {
                 // When online, require either coordinates or manual location
-                if (!hasCoordinates && !hasManualLocation) {
-                    e.preventDefault();
-                    locationStatus.className = 'location-status error';
-                    locationStatus.textContent = '⚠️ Please provide a location (use current location, search, or enter manual location details).';
-                    locationStatus.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    return;
+            if (!hasCoordinates && !hasManualLocation) {
+                e.preventDefault();
+                locationStatus.className = 'location-status error';
+                locationStatus.textContent = '⚠️ Please provide a location (use current location, search, or enter manual location details).';
+                locationStatus.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
                 }
             }
 
@@ -845,12 +864,13 @@
                 }
                 
                 // Network error - check if we can use SMS via cellular
-                // If offline but NOT in airplane mode, try cellular SMS (be aggressive)
-                if (!navigator.onLine && !airplaneMode) {
-                    // Always try cellular SMS when offline but not in airplane mode
-                    // Even if we can't detect cellular, mobile devices usually have it
-                    console.log(`📴 Offline detected (not airplane mode) - attempting to send SMS via cellular network...`);
-                    console.log(`   Cellular detection: available=${cellularInfo.available}, type=${cellularInfo.type}`);
+                // Only try cellular SMS on mobile devices (laptops don't have cellular)
+                if (!navigator.onLine && !airplaneMode && cellularInfo.isMobileDevice) {
+                    // Only try cellular SMS on mobile devices
+                    // Laptops/desktops don't have cellular modems
+                    console.log(`📴 Offline detected (mobile device, not airplane mode) - attempting to send SMS via cellular network...`);
+                    console.log(`   Device: ${cellularInfo.isMobileDevice ? 'Mobile' : 'Desktop/Laptop'}`);
+                    console.log(`   Cellular detection: available=${cellularInfo.available}, type=${cellularInfo.type}, connectionType=${cellularInfo.connectionType}`);
                     submitBtn.textContent = 'Sending via Cellular...';
                     locationStatus.style.display = 'block';
                     locationStatus.className = 'location-status info';
@@ -962,7 +982,11 @@
                 } else {
                     console.log('⚠️ Skipping cellular SMS attempt:', {
                         navigatorOnLine: navigator.onLine,
-                        airplaneMode: airplaneMode
+                        airplaneMode: airplaneMode,
+                        isMobileDevice: cellularInfo.isMobileDevice,
+                        reason: !cellularInfo.isMobileDevice ? 'Not a mobile device (laptops/desktops don\'t have cellular)' : 
+                                airplaneMode ? 'Airplane mode detected' : 
+                                navigator.onLine ? 'Device is online' : 'Unknown reason'
                     });
                 }
                 
