@@ -177,11 +177,6 @@ async function syncAllPendingReports() {
       return { synced: 0, failed: 0 };
     }
 
-    console.log(`🔄 Syncing ${pendingReports.length} pending report(s)...`);
-
-    let synced = 0;
-    let failed = 0;
-
     // Sync reports one by one to avoid overwhelming the server
     // Mark as syncing BEFORE getting the list to prevent race conditions
     const pendingReports = await window.offlineStorage.getPendingReports();
@@ -192,6 +187,7 @@ async function syncAllPendingReports() {
     }
 
     console.log(`🔄 Found ${pendingReports.length} pending report(s) to sync`);
+    console.log(`🔄 Syncing ${pendingReports.length} pending report(s)...`);
 
     let synced = 0;
     let failed = 0;
@@ -311,7 +307,13 @@ if (!syncListenerRegistered && window.offlineStorage) {
         clearTimeout(onlineSyncTimeout);
       }
       onlineSyncTimeout = setTimeout(async () => {
-        await syncAllPendingReports();
+        console.log('🔄 Triggering sync after connection restored...');
+        try {
+          const result = await syncAllPendingReports();
+          console.log('✅ Sync completed:', result);
+        } catch (error) {
+          console.error('❌ Sync failed:', error);
+        }
       }, 2000); // Wait 2 seconds after coming online
     }
   });
