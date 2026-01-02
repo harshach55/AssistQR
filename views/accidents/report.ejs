@@ -1004,11 +1004,47 @@
                             helperNote: formData.get('helperNote'),
                             imageCount: formData.getAll('images').length
                         });
-                        const offlineResponse = await fetch('/accidents/report-offline', {
-                            method: 'POST',
-                            body: formData,
-                            signal: AbortSignal.timeout(60000) // 60 seconds for Render spin-up
-                        });
+                        
+                        // Try fetch first, but if it fails due to browser blocking, try XMLHttpRequest as fallback
+                        let offlineResponse;
+                        try {
+                            offlineResponse = await fetch('/accidents/report-offline', {
+                                method: 'POST',
+                                body: formData,
+                                signal: AbortSignal.timeout(60000) // 60 seconds for Render spin-up
+                            });
+                        } catch (fetchError) {
+                            // If fetch fails (browser blocking), try XMLHttpRequest as fallback
+                            console.log('⚠️ Fetch failed, trying XMLHttpRequest fallback...');
+                            console.log('   Fetch error:', fetchError.message);
+                            
+                            offlineResponse = await new Promise((resolve, reject) => {
+                                const xhr = new XMLHttpRequest();
+                                xhr.open('POST', '/accidents/report-offline', true);
+                                xhr.timeout = 60000; // 60 seconds
+                                
+                                xhr.onload = function() {
+                                    // Create a Response-like object
+                                    resolve({
+                                        ok: xhr.status >= 200 && xhr.status < 300,
+                                        status: xhr.status,
+                                        statusText: xhr.statusText,
+                                        json: async () => JSON.parse(xhr.responseText),
+                                        text: async () => xhr.responseText
+                                    });
+                                };
+                                
+                                xhr.onerror = function() {
+                                    reject(new Error('Network error'));
+                                };
+                                
+                                xhr.ontimeout = function() {
+                                    reject(new Error('Request timeout'));
+                                };
+                                
+                                xhr.send(formData);
+                            });
+                        }
                         
                         console.log('📥 Response received:', {
                             ok: offlineResponse.ok,
