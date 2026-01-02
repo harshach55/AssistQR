@@ -1007,43 +1007,73 @@
                         
                         // Try fetch first, but if it fails due to browser blocking, try XMLHttpRequest as fallback
                         let offlineResponse;
+                        let usedXHR = false;
                         try {
+                            console.log('📤 Attempting fetch() to /accidents/report-offline...');
                             offlineResponse = await fetch('/accidents/report-offline', {
                                 method: 'POST',
                                 body: formData,
                                 signal: AbortSignal.timeout(60000) // 60 seconds for Render spin-up
                             });
+                            console.log('✅ Fetch succeeded!');
                         } catch (fetchError) {
                             // If fetch fails (browser blocking), try XMLHttpRequest as fallback
                             console.log('⚠️ Fetch failed, trying XMLHttpRequest fallback...');
-                            console.log('   Fetch error:', fetchError.message);
+                            console.log('   Fetch error name:', fetchError.name);
+                            console.log('   Fetch error message:', fetchError.message);
+                            usedXHR = true;
                             
-                            offlineResponse = await new Promise((resolve, reject) => {
-                                const xhr = new XMLHttpRequest();
-                                xhr.open('POST', '/accidents/report-offline', true);
-                                xhr.timeout = 60000; // 60 seconds
-                                
-                                xhr.onload = function() {
-                                    // Create a Response-like object
-                                    resolve({
-                                        ok: xhr.status >= 200 && xhr.status < 300,
-                                        status: xhr.status,
-                                        statusText: xhr.statusText,
-                                        json: async () => JSON.parse(xhr.responseText),
-                                        text: async () => xhr.responseText
-                                    });
-                                };
-                                
-                                xhr.onerror = function() {
-                                    reject(new Error('Network error'));
-                                };
-                                
-                                xhr.ontimeout = function() {
-                                    reject(new Error('Request timeout'));
-                                };
-                                
-                                xhr.send(formData);
-                            });
+                            try {
+                                offlineResponse = await new Promise((resolve, reject) => {
+                                    console.log('📤 Attempting XMLHttpRequest to /accidents/report-offline...');
+                                    const xhr = new XMLHttpRequest();
+                                    xhr.open('POST', '/accidents/report-offline', true);
+                                    xhr.timeout = 60000; // 60 seconds
+                                    
+                                    xhr.onload = function() {
+                                        console.log('✅ XMLHttpRequest succeeded! Status:', xhr.status);
+                                        // Create a Response-like object
+                                        resolve({
+                                            ok: xhr.status >= 200 && xhr.status < 300,
+                                            status: xhr.status,
+                                            statusText: xhr.statusText,
+                                            json: async () => {
+                                                try {
+                                                    return JSON.parse(xhr.responseText);
+                                                } catch (e) {
+                                                    return { error: 'Invalid JSON response' };
+                                                }
+                                            },
+                                            text: async () => xhr.responseText
+                                        });
+                                    };
+                                    
+                                    xhr.onerror = function() {
+                                        console.error('❌ XMLHttpRequest error event fired');
+                                        reject(new Error('Network error - XHR failed'));
+                                    };
+                                    
+                                    xhr.ontimeout = function() {
+                                        console.error('❌ XMLHttpRequest timeout');
+                                        reject(new Error('Request timeout - XHR timed out'));
+                                    };
+                                    
+                                    xhr.onabort = function() {
+                                        console.error('❌ XMLHttpRequest aborted');
+                                        reject(new Error('Request aborted - XHR was aborted'));
+                                    };
+                                    
+                                    console.log('📤 Sending XHR request...');
+                                    xhr.send(formData);
+                                });
+                                console.log('✅ XMLHttpRequest fallback succeeded!');
+                            } catch (xhrError) {
+                                console.error('❌ XMLHttpRequest fallback also failed:', {
+                                    errorName: xhrError.name,
+                                    errorMessage: xhrError.message
+                                });
+                                throw xhrError; // Re-throw to be caught by outer catch
+                            }
                         }
                         
                         console.log('📥 Response received:', {
