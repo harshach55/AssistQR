@@ -2,7 +2,7 @@
 // Enables offline functionality for accident reporting form
 // Includes Background Sync API for automatic report syncing
 
-const CACHE_NAME = 'assistqr-v7';
+const CACHE_NAME = 'assistqr-v8';
 
 // Install: Cache resources when Service Worker is installed
 self.addEventListener('install', (event) => {
