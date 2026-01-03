@@ -150,34 +150,6 @@
             </div>
         </div>
 
-        <!-- Offline SMS Instructions (shown when offline and Twilio number is configured) -->
-        <% if (twilioSmsNumber) { %>
-        <div id="offline-sms-instructions" class="card" style="margin-bottom: 1rem; display: block; background-color: #d1ecf1; border: 1px solid #0c5460;">
-            <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
-                <span style="font-size: 1.5rem;">📱</span>
-                <div style="flex: 1;">
-                    <strong style="color: #0c5460; display: block; margin-bottom: 0.5rem;">Send SMS for Immediate Alert</strong>
-                    <p style="margin: 0.25rem 0 0.5rem 0; font-size: 0.875rem; color: #0c5460;">
-                        When offline, send SMS to notify emergency contacts immediately (no internet needed):
-                    </p>
-                    <div style="background: white; padding: 0.75rem; border-radius: 6px; margin: 0.5rem 0; font-family: monospace; font-size: 0.9rem; word-break: break-all;">
-                        <div style="margin-bottom: 0.25rem;"><strong>Send to:</strong> <span id="twilio-number-display"><%= twilioSmsNumber %></span></div>
-                        <div style="margin-bottom: 0.25rem;"><strong>Format:</strong> <span id="sms-format-display">REPORT [TOKEN] [LOCATION] [NOTE]</span></div>
-                        <div style="font-size: 0.8rem; color: #666; margin-top: 0.5rem;">
-                            Example: REPORT <span id="sms-example-token"><%= qrToken %></span> LOCATION Palakollu
-                        </div>
-                    </div>
-                    <button type="button" id="open-sms-btn" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem;">
-                        📱 Open SMS App
-                    </button>
-                    <p style="margin: 0.5rem 0 0 0; font-size: 0.75rem; color: #666;">
-                        Standard SMS charges apply (usually ₹0.50-₹1 per SMS, or free with SMS pack)
-                    </p>
-                </div>
-            </div>
-        </div>
-        <% } %>
-
         <!-- Sync Status -->
         <div id="sync-status" class="sync-status" style="margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; display: none;"></div>
 
@@ -307,8 +279,36 @@
             </form>
         </div>
 
+        <!-- Offline SMS Instructions (shown ONLY when offline and Twilio number is configured) -->
+        <% if (twilioSmsNumber) { %>
+        <div id="offline-sms-instructions" class="card" style="margin-bottom: 1rem; display: none; background-color: #d1ecf1; border: 1px solid #0c5460;">
+            <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
+                <span style="font-size: 1.5rem;">📱</span>
+                <div style="flex: 1;">
+                    <strong style="color: #0c5460; display: block; margin-bottom: 0.5rem;">Offline: Send SMS for Immediate Alert</strong>
+                    <p style="margin: 0.25rem 0 0.5rem 0; font-size: 0.875rem; color: #0c5460;">
+                        Since you're offline, you can send an SMS to notify emergency contacts immediately (no internet needed). The report will also be saved and an email will be sent automatically when your connection is restored.
+                    </p>
+                    <div style="background: white; padding: 0.75rem; border-radius: 6px; margin: 0.5rem 0; font-family: monospace; font-size: 0.9rem; word-break: break-all;">
+                        <div style="margin-bottom: 0.25rem;"><strong>Send to:</strong> <span id="twilio-number-display"><%= twilioSmsNumber %></span></div>
+                        <div style="margin-bottom: 0.25rem;"><strong>Format:</strong> <span id="sms-format-display">REPORT [TOKEN] [LOCATION] [NOTE]</span></div>
+                        <div style="font-size: 0.8rem; color: #666; margin-top: 0.5rem;">
+                            Example: REPORT <span id="sms-example-token"><%= qrToken %></span> LOCATION Palakollu
+                        </div>
+                    </div>
+                    <button type="button" id="open-sms-btn" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem;">
+                        📱 Open SMS App
+                    </button>
+                    <p style="margin: 0.5rem 0 0 0; font-size: 0.75rem; color: #666;">
+                        Standard SMS charges apply (usually ₹0.50-₹1 per SMS, or free with SMS pack)
+                    </p>
+                </div>
+            </div>
+        </div>
+        <% } %>
+
         <div class="card" style="background-color: #fff3cd; border: 1px solid #ffc107;">
-            <p style="margin: 0;"><strong>Note:</strong> By submitting this report, emergency contacts for this vehicle will be immediately notified via email and SMS with the provided information. This form works completely offline - reports are saved locally and automatically synced when connection is restored.</p>
+            <p style="margin: 0;"><strong>Note:</strong> When online, emergency contacts are notified via email immediately. When offline, SMS is sent first (if cellular is available), and email is sent automatically when your connection is restored. This form works completely offline - reports are saved locally and automatically synced.</p>
         </div>
     </div>
 
@@ -789,11 +789,15 @@
                 }
             }
             
-            // Show SMS instructions when Twilio number is configured (always visible)
-            // User can use SMS even when online if they prefer
+            // Show SMS instructions ONLY when offline (when Twilio number is configured)
             if (offlineSmsInstructions) {
-                // Always show SMS instructions if number is configured
-                offlineSmsInstructions.style.display = 'block';
+                if (!isOnline) {
+                    // Show SMS instructions when offline
+                    offlineSmsInstructions.style.display = 'block';
+                } else {
+                    // Hide SMS instructions when online (email is enough)
+                    offlineSmsInstructions.style.display = 'none';
+                }
             }
         }
 
