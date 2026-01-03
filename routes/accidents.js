@@ -336,7 +336,12 @@ router.post('/report-offline', (req, res, next) => {
     // Bystander never sees these phone numbers - server handles it
     console.log('📱 ===== OFFLINE MODE: SENDING SMS NOTIFICATIONS =====');
     console.log('📱 Emergency contacts count:', vehicle.emergencyContacts.length);
-    console.log('📱 Emergency contacts:', vehicle.emergencyContacts.map(c => ({ name: c.name, phone: c.phoneNumber })));
+    console.log('📱 Emergency contacts:', vehicle.emergencyContacts.map(c => ({ 
+      name: c.name, 
+      phone: c.phoneNumber,
+      phoneRaw: c.phoneNumber,
+      phoneLength: c.phoneNumber ? c.phoneNumber.replace(/\D/g, '').length : 0
+    })));
     console.log('📱 Fast2SMS configured:', !!process.env.FAST2SMS_API_KEY);
     console.log('📱 Twilio configured:', !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN));
     

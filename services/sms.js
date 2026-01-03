@@ -59,6 +59,11 @@ async function sendViaFast2SMS(phoneNumber, message) {
 
   const formattedNumber = formatIndianPhoneNumber(phoneNumber);
   
+  // Log phone number formatting for debugging
+  console.log(`   📞 Phone number formatting:`);
+  console.log(`      Original: ${phoneNumber}`);
+  console.log(`      Formatted: ${formattedNumber}`);
+  
   // Fast2SMS API endpoint
   const url = 'https://www.fast2sms.com/dev/bulkV2';
   
@@ -92,17 +97,29 @@ async function sendViaFast2SMS(phoneNumber, message) {
         try {
           const response = JSON.parse(data);
           
+          // Log full Fast2SMS response for debugging
+          console.log(`   📱 Fast2SMS API Response:`);
+          console.log(`      Status Code: ${res.statusCode}`);
+          console.log(`      Response: ${JSON.stringify(response, null, 2)}`);
+          
           if (response.return === true) {
             console.log(`✅ Fast2SMS: SMS sent successfully to ${formattedNumber}`);
             console.log(`   Request ID: ${response.request_id || 'N/A'}`);
+            if (response.message) {
+              console.log(`   Message: ${response.message}`);
+            }
             resolve({ success: true, requestId: response.request_id });
           } else {
             const errorMsg = response.message || 'Unknown error from Fast2SMS';
             console.error(`❌ Fast2SMS error: ${errorMsg}`);
+            if (response.message_id) {
+              console.error(`   Message ID: ${response.message_id}`);
+            }
             reject(new Error(errorMsg));
           }
         } catch (parseError) {
           console.error('❌ Fast2SMS: Error parsing response:', parseError);
+          console.error('   Raw response data:', data);
           reject(new Error('Failed to parse Fast2SMS response'));
         }
       });
