@@ -162,25 +162,61 @@ async function sendAccidentAlertSMS({ vehicle, contact, lat, lng, imageUrls = []
   message += `${timeStr}\n`;
   
   // Location (maps link or manual location)
+  // Reserve space for footer (13 chars) - max 45 chars for location
   if (mapsLink) {
     message += `${mapsLink}\n`;
   } else if (manualLocation) {
-    // Truncate location if too long (max 50 chars)
-    const shortLoc = manualLocation.length > 50 ? manualLocation.substring(0, 47) + '...' : manualLocation;
+    // Truncate location to max 45 chars (accounting for footer)
+    const shortLoc = manualLocation.length > 45 ? manualLocation.substring(0, 42) + '...' : manualLocation;
     message += `${shortLoc}\n`;
   }
   
-  // Helper note (truncate to 40 chars max)
+  // Helper note (truncate to 30 chars max to leave room for footer)
   if (helperNote) {
-    const shortNote = helperNote.length > 40 ? helperNote.substring(0, 37) + '...' : helperNote;
+    const shortNote = helperNote.length > 30 ? helperNote.substring(0, 27) + '...' : helperNote;
     message += `${shortNote}`;
   }
 
-  // REMOVED: Footer text, "Photos available" line, and extra blank lines to save characters
-  // These are not essential for emergency alerts and add significant length
+  // Add footer "From AssistQR" (13 chars including newline)
+  const footer = `\nFrom AssistQR`;
+  
+  // Final check: if adding footer exceeds 160, truncate more aggressively
+  if (message.length + footer.length > 160) {
+    const maxLength = 160 - footer.length; // Reserve space for footer
+    // Truncate from the end, keeping essential parts
+    const essentialParts = message.split('\n');
+    let truncatedMessage = essentialParts[0] + '\n'; // "EMERGENCY ALERT"
+    truncatedMessage += essentialParts[1] + '\n'; // Vehicle info
+    truncatedMessage += essentialParts[2] + '\n'; // Timestamp
+    
+    // Add location/note with remaining space
+    let remainingSpace = maxLength - truncatedMessage.length;
+    if (essentialParts[3]) { // Location or note
+      const part3 = essentialParts[3].length > remainingSpace 
+        ? essentialParts[3].substring(0, remainingSpace - 3) + '...' 
+        : essentialParts[3];
+      truncatedMessage += part3;
+      remainingSpace -= part3.length;
+    }
+    if (essentialParts[4] && remainingSpace > 5) { // Note if present
+      const part4 = essentialParts[4].length > remainingSpace 
+        ? essentialParts[4].substring(0, remainingSpace - 3) + '...' 
+        : essentialParts[4];
+      truncatedMessage += part4;
+    }
+    message = truncatedMessage;
+  }
+  
+  // Add footer
+  message += footer;
 
   console.log(`📱 Sending SMS to: ${contact.phoneNumber}`);
   console.log(`   - Message length: ${message.length} characters`);
+  if (message.length > 160) {
+    console.warn(`   ⚠️  WARNING: Message exceeds 160 chars (${message.length}), will be split into multiple SMS parts (costs more)`);
+  } else {
+    console.log(`   ✅ Message within 160 char limit (1 SMS part = ₹5)`);
+  }
   console.log(`   - Vehicle: ${vehicle.licensePlate}`);
   console.log(`   - Location: ${lat && lng ? `${lat}, ${lng}` : manualLocation || 'Not provided'}`);
   console.log(`   - Photos: ${imageUrls.length} image(s)`);
