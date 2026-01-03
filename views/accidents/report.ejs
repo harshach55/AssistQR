@@ -708,6 +708,7 @@
         // Build SMS message for offline reporting
         function buildSMSMessage() {
             const qrToken = document.querySelector('input[name="qrToken"]').value;
+            console.log('🔍 buildSMSMessage - Token being used:', qrToken);
             const lat = latitudeInput.value;
             const lng = longitudeInput.value;
             const manualLocation = document.getElementById('manualLocation').value.trim();
@@ -755,6 +756,12 @@
                 alert('⚠️ SMS number not configured. Please contact support.');
                 return;
             }
+            
+            // Debug: Check token being used
+            const qrTokenInput = document.querySelector('input[name="qrToken"]');
+            const qrTokenValue = qrTokenInput ? qrTokenInput.value : 'NOT FOUND';
+            console.log('🔍 Debug - Token from hidden input:', qrTokenValue);
+            console.log('🔍 Debug - Expected token from URL:', '<%= qrToken %>');
             
             const smsMessage = buildSMSMessage();
             const smsUrl = `sms:${twilioNumber}?body=${encodeURIComponent(smsMessage)}`;
