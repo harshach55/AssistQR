@@ -103,11 +103,18 @@ async function sendViaFast2SMS(phoneNumber, message) {
           console.log(`      Response: ${JSON.stringify(response, null, 2)}`);
           
           if (response.return === true) {
-            console.log(`✅ Fast2SMS: SMS sent successfully to ${formattedNumber}`);
+            console.log(`✅ Fast2SMS: SMS accepted by Fast2SMS for ${formattedNumber}`);
             console.log(`   Request ID: ${response.request_id || 'N/A'}`);
             if (response.message) {
               console.log(`   Message: ${response.message}`);
             }
+            console.log(`   ⚠️  NOTE: "SMS sent successfully" means Fast2SMS accepted the message.`);
+            console.log(`   ⚠️  Actual delivery depends on carrier and may take a few minutes.`);
+            console.log(`   ⚠️  If not received, check:`);
+            console.log(`      1. Phone number is correct: ${phoneNumber} → ${formattedNumber}`);
+            console.log(`      2. Spam/filtered messages folder`);
+            console.log(`      3. Carrier may be blocking promotional SMS`);
+            console.log(`      4. Check Fast2SMS dashboard for delivery status`);
             resolve({ success: true, requestId: response.request_id });
           } else {
             const errorMsg = response.message || 'Unknown error from Fast2SMS';
@@ -227,7 +234,7 @@ async function sendAccidentAlertSMS({ vehicle, contact, lat, lng, imageUrls = []
   // Add footer
   message += footer;
 
-  console.log(`📱 Sending SMS to: ${contact.phoneNumber}`);
+  console.log(`📱 Sending SMS to: ${contact.phoneNumber} (${contact.name || 'Unknown'})`);
   console.log(`   - Message length: ${message.length} characters`);
   if (message.length > 160) {
     console.warn(`   ⚠️  WARNING: Message exceeds 160 chars (${message.length}), will be split into multiple SMS parts (costs more)`);
