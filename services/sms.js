@@ -134,51 +134,53 @@ async function sendViaTwilio(phoneNumber, message) {
 }
 
 async function sendAccidentAlertSMS({ vehicle, contact, lat, lng, imageUrls = [], helperNote, manualLocation }) {
-  // Build Google Maps link
+  // Build shortened Google Maps link (without https://www. to save characters)
   let mapsLink = '';
   if (lat && lng) {
-    mapsLink = `https://www.google.com/maps?q=${lat},${lng}`;
+    mapsLink = `maps.google.com/?q=${lat},${lng}`;
   }
 
-  // Build location text
-  let locationText = '';
+  // Build concise SMS message (NO EMOJI to avoid Unicode encoding - target: under 160 chars)
+  // Removing emoji prevents Unicode encoding which limits to 70 chars per SMS instead of 160
+  let message = `EMERGENCY ALERT\n`;
+  
+  // Compact vehicle info on one line
+  message += `${vehicle.licensePlate}`;
+  if (vehicle.model) message += ` ${vehicle.model}`;
+  if (vehicle.color) message += ` ${vehicle.color}`;
+  message += `\n`;
+  
+  // Shortened timestamp (remove seconds, use shorter date format)
+  const timeStr = new Date().toLocaleString('en-IN', { 
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  message += `${timeStr}\n`;
+  
+  // Location (maps link or manual location)
   if (mapsLink) {
-    locationText = `Location: ${mapsLink}`;
+    message += `${mapsLink}\n`;
+  } else if (manualLocation) {
+    // Truncate location if too long (max 50 chars)
+    const shortLoc = manualLocation.length > 50 ? manualLocation.substring(0, 47) + '...' : manualLocation;
+    message += `${shortLoc}\n`;
   }
-  if (manualLocation) {
-    locationText += locationText ? `\nDescription: ${manualLocation}` : `Location: ${manualLocation}`;
+  
+  // Helper note (truncate to 40 chars max)
+  if (helperNote) {
+    const shortNote = helperNote.length > 40 ? helperNote.substring(0, 37) + '...' : helperNote;
+    message += `${shortNote}`;
   }
 
-  // Build SMS message (keep it concise - SMS has 160 character limit)
-  let message = `🚨 EMERGENCY ALERT\n\n`;
-  message += `Vehicle: ${vehicle.licensePlate}\n`;
-  if (vehicle.model) message += `Model: ${vehicle.model}\n`;
-  if (vehicle.color) message += `Color: ${vehicle.color}\n`;
-  message += `Time: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\n`;
-  
-  if (locationText) {
-    message += `${locationText}\n\n`;
-  }
-  
-  if (helperNote) {
-    // Truncate note if too long
-    const maxNoteLength = 100;
-    const truncatedNote = helperNote.length > maxNoteLength 
-      ? helperNote.substring(0, maxNoteLength) + '...' 
-      : helperNote;
-    message += `Note: ${truncatedNote}\n\n`;
-  }
-  
-  if (imageUrls.length > 0) {
-    message += `Photos: ${imageUrls.length} image(s) available\n`;
-    if (imageUrls[0]) {
-      message += `View: ${imageUrls[0]}\n`;
-    }
-  }
-  
-  message += `\nThis is an automated alert from Vehicle Safety QR System.`;
+  // REMOVED: Footer text, "Photos available" line, and extra blank lines to save characters
+  // These are not essential for emergency alerts and add significant length
 
   console.log(`📱 Sending SMS to: ${contact.phoneNumber}`);
+  console.log(`   - Message length: ${message.length} characters`);
   console.log(`   - Vehicle: ${vehicle.licensePlate}`);
   console.log(`   - Location: ${lat && lng ? `${lat}, ${lng}` : manualLocation || 'Not provided'}`);
   console.log(`   - Photos: ${imageUrls.length} image(s)`);
@@ -221,6 +223,3 @@ async function sendAccidentAlertSMS({ vehicle, contact, lat, lng, imageUrls = []
 module.exports = {
   sendAccidentAlertSMS
 };
-
-
-
