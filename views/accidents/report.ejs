@@ -913,66 +913,6 @@
             };
         }
 
-        // Build SMS Message
-        function buildSMSMessage() {
-            const qrToken = document.querySelector('input[name="qrToken"]').value;
-            const lat = latitudeInput.value;
-            const lng = longitudeInput.value;
-            const manualLocation = document.getElementById('manualLocation').value.trim();
-            const helperNote = document.getElementById('helperNote').value.trim();
-            
-            // Format: "REPORT [TOKEN] [LAT] [LNG] [NOTE]"
-            let smsMessage = `REPORT ${qrToken}`;
-            
-            // Add location
-            if (lat && lng) {
-                smsMessage += ` ${lat} ${lng}`;
-            } else if (manualLocation) {
-                smsMessage += ` LOCATION ${manualLocation.substring(0, 50)}`;
-            }
-            
-            // Add note (truncate to fit SMS limit)
-            if (helperNote) {
-                const remainingChars = 140 - smsMessage.length - 6; // Reserve space for " NOTE "
-                if (remainingChars > 0) {
-                    smsMessage += ` NOTE ${helperNote.substring(0, remainingChars)}`;
-                }
-            }
-            
-            // Ensure message is within SMS limits
-            if (smsMessage.length > 140) {
-                smsMessage = smsMessage.substring(0, 137) + '...';
-            }
-            
-            return smsMessage;
-        }
-
-        // Send SMS via device SMS app
-        function sendViaSMS() {
-            const smsMessage = buildSMSMessage();
-            // Service number from server-side (Twilio number configured in .env)
-            const serviceNumber = '<%= smsServiceNumber || "" %>';
-            const submitBtn = form.querySelector('button[type="submit"]');
-            
-            if (!serviceNumber) {
-                alert('⚠️ SMS service number not configured. Please connect to internet to submit the report.');
-                locationStatus.className = 'location-status error';
-                locationStatus.textContent = '⚠️ SMS service not available. Please connect to internet.';
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Submit Emergency Report';
-                return;
-            }
-            
-            // Construct SMS URL
-            const smsUrl = `sms:${serviceNumber}?body=${encodeURIComponent(smsMessage)}`;
-            
-            // Open SMS app
-            window.location.href = smsUrl;
-            
-            // Show confirmation
-            alert('📱 Please send the SMS that opened in your messaging app.\n\nThis will notify emergency contacts even without internet.');
-        }
-
         // Form submission validation and connectivity handling
         form.addEventListener('submit', async (e) => {
             const hasCoordinates = latitudeInput.value && longitudeInput.value;
