@@ -310,6 +310,47 @@
     </div>
 
     <script>
+        // ===== TOKEN EXTRACTION FIX =====
+        // Extract token from URL and update hidden input (handles cached pages with old tokens)
+        (function() {
+            // Extract token from URL query parameter
+            const urlParams = new URLSearchParams(window.location.search);
+            const tokenFromUrl = urlParams.get('v');
+            
+            if (tokenFromUrl) {
+                // Wait for DOM to be ready
+                const updateToken = () => {
+                    const qrTokenInput = document.querySelector('input[name="qrToken"]');
+                    if (qrTokenInput) {
+                        const oldToken = qrTokenInput.value;
+                        qrTokenInput.value = tokenFromUrl;
+                        
+                        // Log if token was updated (indicates cached page issue)
+                        if (oldToken !== tokenFromUrl) {
+                            console.log('🔄 Token updated from URL:');
+                            console.log('   Old token (from cache):', oldToken);
+                            console.log('   New token (from URL):', tokenFromUrl);
+                        } else {
+                            console.log('✅ Token matches URL:', tokenFromUrl);
+                        }
+                    } else {
+                        // Retry if input not found yet
+                        setTimeout(updateToken, 100);
+                    }
+                };
+                
+                // Try immediately, then on DOMContentLoaded, then on load
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', updateToken);
+                } else {
+                    updateToken();
+                }
+                window.addEventListener('load', updateToken);
+            } else {
+                console.warn('⚠️ No token found in URL query parameter (v=)');
+            }
+        })();
+        
         const form = document.getElementById('accident-form');
         const getLocationBtn = document.getElementById('get-location-btn');
         const clearLocationBtn = document.getElementById('clear-location-btn');

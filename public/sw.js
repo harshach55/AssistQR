@@ -2,7 +2,7 @@
 // Enables offline functionality for accident reporting form
 // Includes Background Sync API for automatic report syncing
 
-const CACHE_NAME = 'assistqr-v8';
+const CACHE_NAME = 'assistqr-v9';
 
 // Install: Cache resources when Service Worker is installed
 self.addEventListener('install', (event) => {
@@ -55,7 +55,8 @@ self.addEventListener('fetch', (event) => {
       (async () => {
         try {
           const cache = await caches.open(CACHE_NAME);
-          const cacheKey = new Request(url.pathname, { method: 'GET' });
+          // Include query string in cache key so each QR code (token) gets its own cache entry
+          const cacheKey = new Request(event.request.url, { method: 'GET' });
           
           // Try network first
           try {
