@@ -48,13 +48,8 @@ function getFileUrl(filename) {
   return `${baseUrl}/uploads/accidents/${filename}`;
 }
 
-function getFilePath(filename) {
-  return path.join(uploadsDir, filename);
-}
-
 module.exports = {
   uploadMultiple,
-  getFileUrl,
-  getFilePath
+  getFileUrl
 };
 

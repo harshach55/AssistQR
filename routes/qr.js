@@ -41,12 +41,6 @@ router.get('/help', async (req, res) => {
     // Get SMS number from environment variables
     const twilioSmsNumber = process.env.TWILIO_SMS_NUMBER || process.env.TWILIO_FROM_NUMBER || null;
     
-    // Debug logging
-    console.log('📱 SMS Number Configuration:');
-    console.log('   TWILIO_SMS_NUMBER:', process.env.TWILIO_SMS_NUMBER || 'NOT SET');
-    console.log('   TWILIO_FROM_NUMBER:', process.env.TWILIO_FROM_NUMBER || 'NOT SET');
-    console.log('   Final twilioSmsNumber:', twilioSmsNumber);
-    
     res.render('accidents/report', {
       vehicle: {
         licensePlate: vehicle.licensePlate,
@@ -55,7 +49,6 @@ router.get('/help', async (req, res) => {
       },
       qrToken,
       googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || null,
-      smsServiceNumber: process.env.TWILIO_FROM_NUMBER || process.env.SMS_SERVICE_NUMBER || null,
       twilioSmsNumber: twilioSmsNumber
     });
   } catch (error) {
