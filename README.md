@@ -12,7 +12,7 @@ A complete MVP for a vehicle safety system using QR codes. In case of an acciden
 - **Geolocation**: Automatic location capture using browser Geolocation API
 - **Photo Upload**: Upload multiple photos (stored on S3)
 - **Email Notifications**: Automated email alerts via SMTP
-- **SMS Notifications**: Automated SMS alerts via Twilio
+- **SMS Notifications**: Automated SMS alerts via Twilio (only to verified numbers on trial, to any number on paid plan)
 - **Privacy-First**: QR codes contain only secure tokens, no sensitive data exposed
 
 ## Tech Stack
@@ -22,7 +22,7 @@ A complete MVP for a vehicle safety system using QR codes. In case of an acciden
 - **Authentication**: Sessions with bcrypt password hashing
 - **File Storage**: AWS S3 (abstracted service layer)
 - **Email**: Nodemailer with SMTP
-- **SMS**: Twilio
+- **SMS**: Twilio (Free: only to verified numbers. Paid: to any number.)
 - **QR Code**: Server-side generation with `qrcode` package
 - **Frontend**: Plain HTML, CSS, and vanilla JavaScript (EJS templates)
 - **Validation**: express-validator
@@ -119,13 +119,53 @@ A complete MVP for a vehicle safety system using QR codes. In case of an acciden
 - Enable 2-factor authentication
 - Generate app password from Google Account settings
 
-### SMS Configuration (Twilio)
+### SMS Gateway Configuration (Twilio, Telerivet, Fast2SMS)
+
+This project supports several possible SMS backends. By default, Twilio is used, but you can adapt it for:
+- **Twilio**: International, reliable. Free trial only to verified numbers. Paid: any number.
+- **Telerivet**: Use your Android phone as an SMS gateway (sends via your own SIM). Totally free (except your carrier's SMS cost), globally available.
+- **Fast2SMS**: Low cost for India (~₹0.10/SMS, limited to India only, good for large quantities/alerts, but requires credits and bulk/transactional sender approval).
+
 
 - `TWILIO_ACCOUNT_SID`: Your Twilio account SID
 - `TWILIO_AUTH_TOKEN`: Your Twilio auth token
 - `TWILIO_FROM_NUMBER`: Your Twilio phone number (E.164 format, e.g., +1234567890)
 
-**Note**: SMS functionality will be skipped if Twilio credentials are not configured.
+**Notes:**
+- If Twilio credentials are missing, SMS will not send (only email goes out by default).
+- If you want to use Telerivet, configure and run the Telerivet Android app and set environment variables (see below). For Fast2SMS, use their API key and required sender ID/route settings.
+
+
+### Telerivet Android SMS Gateway (Alternative Option)
+
+**Telerivet lets you use any Android phone as an SMS gateway for free:**
+- Download Telerivet Gateway app: https://play.google.com/store/apps/details?id=com.telerivet.android
+- Create a free account at https://telerivet.com
+- Add your Android device and link it to your project.
+- Get your **API Key** and your **Project ID** from your Telerivet dashboard.
+
+Add these to your environment variables:
+```
+TELERIVET_API_KEY=your-telerivet-api-key
+TELERIVET_PROJECT_ID=your-telerivet-project-id
+TELERIVET_PHONE_ID=the-id-of-your-android-device (see Telerivet website)
+```
+- Your app will now send SMS via your Android phone's SIM. Device must have internet. 
+
+**Advantage:** Global sending, as per your local carrier plan. Good for grassroots projects, limited-budget/hobby use, or if other SMS services are blocked.
+
+### Fast2SMS (India only, cheap, for transactional/bulk use)
+
+- Get API key from https://www.fast2sms.com/
+- Add credits (prepaid, pay per use)
+- Set up your Sender ID (DLT registration for transactional, otherwise use approved Fast2SMS Sender IDs)
+- Typical env vars:
+```
+FAST2SMS_API_KEY=your-fast2sms-api-key
+FAST2SMS_SENDER_ID=approved-sender
+FAST2SMS_ROUTE=your-route
+```
+- Update code to use Fast2SMS API endpoints for sending (see Fast2SMS docs), or use an SMS microservice to bridge this API with your project’s POST route.
 
 ### S3 Configuration
 
