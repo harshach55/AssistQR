@@ -2,6 +2,10 @@
 
 A complete MVP for a vehicle safety system using QR codes. In case of an accident, bystanders can scan the QR code on a vehicle, share location and photos, and the system automatically notifies emergency contacts via email and SMS.
 
+## Live Demo
+
+https://assistqr.onrender.com/
+
 ## Features
 
 - **User Authentication**: Secure signup/login with session management
